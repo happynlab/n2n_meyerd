@@ -29,6 +29,7 @@
 #include <sys/stat.h>
 #include "minilzo.h"
 
+#ifndef __ANDROID_NDK__
 #include "scm.h"
 
 int n2n_main(int, char **);
@@ -40,7 +41,12 @@ struct SCM_def sd = {
         .main = n2n_main,
         .stop = n2n_stop,
 };
+#endif /* __ANDROID_NDK__ */
 
+#ifdef __ANDROID_NDK__
+#include "android/edge_android.h"
+#include <tun2tap/tun2tap.h>
+#endif /* __ANDROID_NDK__ */
 
 #if defined(DEBUG)
 #define SOCKET_TIMEOUT_INTERVAL_SECS    5
@@ -509,7 +515,7 @@ static void readFromIPSocket( n2n_edge_t * eee );
 static void readFromMgmtSocket( n2n_edge_t * eee, int * keep_running );
 
 static void help() {
-  print_n2n_version();
+  print_n2n_version(0 /* no trace */);
 
   printf("edge "
 #if defined(N2N_CAN_NAME_IFACE)
@@ -1387,7 +1393,19 @@ static void readFromTAPSocket( n2n_edge_t * eee )
     macstr_t            mac_buf;
     ssize_t             len;
 
-    len = tuntap_read( &(eee->device), eth_pkt, N2N_PKT_BUF_SIZE );
+#ifdef __ANDROID_NDK__
+    if (uip_arp_len != 0) {
+        len = uip_arp_len;
+        memcpy(eth_pkt, uip_arp_buf, MIN(uip_arp_len, N2N_PKT_BUF_SIZE));
+        traceEvent(TRACE_DEBUG, "ARP reply packet to send");
+    }
+    else
+    {
+#endif /* #ifdef __ANDROID_NDK__ */
+        len = tuntap_read( &(eee->device), eth_pkt, N2N_PKT_BUF_SIZE );
+#ifdef __ANDROID_NDK__
+    }
+#endif /* #ifdef __ANDROID_NDK__ */
 
     if( (len <= 0) || (len > N2N_PKT_BUF_SIZE) )
     {
@@ -1503,6 +1521,7 @@ static int handle_PACKET( n2n_edge_t * eee,
 }
 
 
+#ifndef __ANDROID_NDK__
 /** Read a datagram from the management UDP socket and take appropriate
  *  action. */
 static void readFromMgmtSocket( n2n_edge_t * eee, int * keep_running )
@@ -1802,6 +1821,7 @@ static void readFromMgmtSocket( n2n_edge_t * eee, int * keep_running )
     sendto( eee->udp_mgmt_sock, udp_buf, msg_len, 0/*flags*/,
             (struct sockaddr *)&sender_sock, sizeof(struct sockaddr_in) );
 }
+#endif /* #ifndef __ANDROID_NDK__ */
 
 
 /** Read a datagram from the main UDP socket to the internet. */
@@ -2287,6 +2307,7 @@ static int scan_address( char * ip_addr, size_t addr_size,
 
 static int run_loop(n2n_edge_t * eee );
 int real_main(int argc, char* argv[]);
+static n2n_edge_t eee; /* single instance for this program */
 
 #define N2N_NETMASK_STR_SIZE    16 /* dotted decimal 12 numbers + 3 dots */
 #define N2N_MACNAMSIZ           18 /* AA:BB:CC:DD:EE:FF + NULL*/
@@ -2316,8 +2337,6 @@ int real_main(int argc, char* argv[])
     int     i, effectiveargc=0;
     char ** effectiveargv=NULL;
     char  * linebuffer = NULL;
-
-    n2n_edge_t eee; /* single instance for this program */
 
     if (-1 == edge_init(&eee) )
     {
@@ -2484,8 +2503,8 @@ int real_main(int argc, char* argv[])
                 fprintf(stderr, "Error: -K and -k options are mutually exclusive.\n");
                 exit(1);
             } else {
-                traceEvent(TRACE_DEBUG, "encrypt_key = '%s'\n", encrypt_key);
                 encrypt_key = strdup(optarg);
+                traceEvent(TRACE_DEBUG, "encrypt_key = '%s'\n", encrypt_key);
             }
             break;
         }
@@ -2606,8 +2625,7 @@ int real_main(int argc, char* argv[])
     }
 #endif /* #ifdef N2N_HAVE_DAEMON */
 
-
-    traceEvent( TRACE_NORMAL, "Starting n2n edge %s %s", n2n_sw_version, n2n_sw_buildDate );
+    print_n2n_version(1 /* trace */);
 
 
     for (i=0; i< N2N_EDGE_NUM_SUPERNODES; ++i )
@@ -2755,8 +2773,11 @@ static int run_loop(n2n_edge_t * eee )
 
         FD_ZERO(&socket_mask);
         FD_SET(eee->udp_sock, &socket_mask);
+        max_sock = eee->udp_sock;
+#ifndef __ANDROID_NDK__
         FD_SET(eee->udp_mgmt_sock, &socket_mask);
         max_sock = max( eee->udp_sock, eee->udp_mgmt_sock );
+#endif /* #ifndef __ANDROID_NDK__ */
 #ifndef WIN32
         FD_SET(eee->device.fd, &socket_mask);
         max_sock = max( max_sock, eee->device.fd );
@@ -2786,12 +2807,14 @@ static int run_loop(n2n_edge_t * eee )
                 readFromIPSocket(eee);
             }
 
+#ifndef __ANDROID_NDK__
             if(FD_ISSET(eee->udp_mgmt_sock, &socket_mask))
             {
                 /* Read a cooked socket from the internet socket. Writes on the TAP
                  * socket. */
                 readFromMgmtSocket(eee, &keep_running);
             }
+#endif /* #ifndef __ANDROID_NDK__ */
 
 #ifndef WIN32
             if(FD_ISSET(eee->device.fd, &socket_mask))
@@ -2801,6 +2824,12 @@ static int run_loop(n2n_edge_t * eee )
                 readFromTAPSocket(eee);
             }
 #endif
+#ifdef __ANDROID_NDK__
+            if (uip_arp_len != 0) {
+                readFromTAPSocket(eee);
+                uip_arp_len = 0;
+            }
+#endif /* #ifdef __ANDROID_NDK__ */
         }
 
         /* Finished processing select data. */
@@ -2841,6 +2870,10 @@ static int run_loop(n2n_edge_t * eee )
 			eee->rx_bps_sup = eee->rx_bit_sup / (size_t)lastStatCalcDiff;
 			eee->rx_bit_sup = 0;
 			lastStatCalc = nowTime;
+
+#ifdef __ANDROID_NDK__
+            uip_arp_timer();
+#endif /* #ifdef __ANDROID_NDK__ */
 		}
 
     } /* while */
@@ -2855,6 +2888,7 @@ static int run_loop(n2n_edge_t * eee )
     return(0);
 }
 
+#ifndef __ANDROID_NDK__
 int n2n_main(int argc, char **argv) {
        return real_main(argc,argv);
 }
@@ -2872,4 +2906,220 @@ int main(int argc, char **argv)
 
         return 0;
 }
+#else /* #ifdef __ANDROID_NDK__ */
+int start_edge(const n2n_edge_cmd_t* cmd)
+{
+    int     local_port = 0 /* any port */;
+    char    tuntap_dev_name[N2N_IFNAMSIZ] = "tun0";
+    char    ip_mode[N2N_IF_MODE_SIZE]="static";
+    char    ip_addr[N2N_NETMASK_STR_SIZE] = "";
+    char    netmask[N2N_NETMASK_STR_SIZE]="255.255.255.0";
+    char    device_mac[N2N_MACNAMSIZ]="";
+    char *  encrypt_key=NULL;
+    int i;
 
+    keep_running = 0;
+    if (!cmd) {
+        traceEvent( TRACE_ERROR, "Empty cmd struct" );
+        return 1;
+    }
+
+    if (-1 == edge_init(&eee) )
+    {
+        traceEvent( TRACE_ERROR, "Failed in edge_init" );
+        return 1;
+    }
+    memset(&(eee.supernode), 0, sizeof(eee.supernode));
+    eee.supernode.family = AF_INET;
+
+    if (cmd->vpn_fd == -1) {
+        traceEvent(TRACE_ERROR, "VPN socket is invalid.");
+        return 1;
+    }
+    eee.device.fd = cmd->vpn_fd;
+    if (cmd->enc_key_file)
+    {
+        strncpy(eee.keyschedule, cmd->enc_key_file, N2N_PATHNAME_MAXLEN-1);
+        eee.keyschedule[N2N_PATHNAME_MAXLEN-1]=0; /* strncpy does not add NULL if the source has no NULL. */
+        traceEvent(TRACE_DEBUG, "keyfile = '%s'\n", eee.keyschedule);
+    }
+    else if (cmd->enc_key)
+    {
+        encrypt_key = strdup(cmd->enc_key);
+        traceEvent(TRACE_DEBUG, "encrypt_key = '%s'\n", encrypt_key);
+    }
+
+    if (cmd->ip_addr[0] != '\0')
+    {
+        scan_address(ip_addr, N2N_NETMASK_STR_SIZE,
+                     ip_mode, N2N_IF_MODE_SIZE,
+                     cmd->ip_addr);
+    }
+    else
+    {
+        traceEvent(TRACE_ERROR, "Ip address is not set.");
+        free(encrypt_key);
+        return 1;
+    }
+    if (cmd->community[0] != '\0')
+    {
+        strncpy((char *)eee.community_name, cmd->community, N2N_COMMUNITY_SIZE);
+    }
+    else
+    {
+        traceEvent(TRACE_ERROR, "Community is not set.");
+        free(encrypt_key);
+        return 1;
+    }
+    eee.drop_multicast = cmd->drop_multicast == 0 ? 0 : 1;
+    if (cmd->mac_addr[0] != '\0')
+    {
+        strncpy(device_mac, cmd->mac_addr, N2N_MACNAMSIZ);
+    }
+    else
+    {
+        strncpy(device_mac, random_device_mac(), N2N_MACNAMSIZ);
+        traceEvent(TRACE_DEBUG, "random device mac: %s\n", device_mac);
+    }
+    eee.allow_routing = cmd->allow_routing == 0 ? 0 : 1;
+    for (i = 0; i < N2N_EDGE_NUM_SUPERNODES && i < EDGE_CMD_SUPERNODES_NUM; ++i)
+    {
+        if (cmd->supernodes[i][0] != '\0')
+        {
+            strncpy(eee.sn_ip_array[eee.sn_num], cmd->supernodes[i], N2N_EDGE_SN_HOST_SIZE);
+            traceEvent(TRACE_DEBUG, "Adding supernode[%u] = %s\n", (unsigned int)eee.sn_num, (eee.sn_ip_array[eee.sn_num]));
+            ++eee.sn_num;
+        }
+    }
+    eee.holepunch_interval = cmd->holepunch_interval;
+    eee.holepunch_interval = MAX(eee.holepunch_interval, REGISTER_SUPER_INTERVAL_MIN);
+    eee.holepunch_interval = MIN(eee.holepunch_interval, REGISTER_SUPER_INTERVAL_MAX);
+    if (cmd->local_ip[0] != '\0')
+    {
+        eee.local_sock_ena = 1;
+        strncpy(eee.local_ip_str, cmd->local_ip, N2N_EDGE_LOCAL_IP_SIZE);
+        if (N2N_EDGE_LOCAL_IP_SIZE > 0)
+        {
+            eee.local_ip_str[N2N_EDGE_LOCAL_IP_SIZE - 1] = '\0';
+        }
+        traceEvent(TRACE_DEBUG, "Storing local_ip_str = %s\n", (eee.local_ip_str));
+    }
+    eee.re_resolve_supernode_ip = cmd->re_resolve_supernode_ip == 0 ? 0 : 1;
+    if (cmd->ip_netmask[0] != '\0')
+    {
+        strncpy(netmask, cmd->ip_netmask, N2N_NETMASK_STR_SIZE);
+    }
+    traceLevel = cmd->trace_vlevel;
+    traceLevel = traceLevel < TRACE_ERROR ? TRACE_ERROR : traceLevel;
+    traceLevel = traceLevel > TRACE_DEBUG ? TRACE_DEBUG : traceLevel;
+
+
+    print_n2n_version(1 /* trace */);
+    for (i=0; i< N2N_EDGE_NUM_SUPERNODES; ++i )
+    {
+        traceEvent(TRACE_NORMAL, "supernode %u => %s\n", i, (eee.sn_ip_array[i]));
+    }
+    supernode2addr(&(eee.supernode), eee.sn_ip_array[eee.sn_idx]);
+    if (encrypt_key == NULL && strlen(eee.keyschedule) == 0)
+    {
+        traceEvent(TRACE_WARNING, "Encryption is disabled in edge.");
+        eee.null_transop = 1;
+    }
+    if (0 == strcmp("dhcp", ip_mode))
+    {
+        traceEvent(TRACE_NORMAL, "Dynamic IP address assignment enabled.");
+        eee.dyn_ip_mode = 1;
+    }
+    else
+    {
+        traceEvent(TRACE_NORMAL, "ip_mode='%s'", ip_mode);
+    }
+    if(tuntap_open(&(eee.device), tuntap_dev_name, ip_mode, ip_addr, netmask, device_mac, cmd->mtu) < 0)
+    {
+        traceEvent(TRACE_ERROR, "Failed in tuntap_open");
+        free(encrypt_key);
+        return -1;
+    }
+    if(local_port > 0)
+    {
+        traceEvent(TRACE_NORMAL, "Binding to local port %d", (signed int)local_port);
+    }
+    if (encrypt_key)
+    {
+        if(edge_init_twofish(&eee, (uint8_t *)(encrypt_key), strlen(encrypt_key)) < 0)
+        {
+            traceEvent(TRACE_ERROR, "twofish setup failed.\n");
+            free(encrypt_key);
+            return 1;
+        }
+        free(encrypt_key);
+        encrypt_key = NULL;
+    }
+    else if (strlen(eee.keyschedule) > 0)
+    {
+        if (edge_init_keyschedule(&eee) != 0)
+        {
+            traceEvent(TRACE_ERROR, "keyschedule setup failed.\n");
+            free(encrypt_key);
+            return(-1);
+        }
+    }
+    /* else run in NULL mode */
+    eee.udp_sock = open_socket(local_port, 1 /*bind ANY*/ );
+    if(eee.udp_sock < 0)
+    {
+        traceEvent(TRACE_ERROR, "Failed to bind main UDP port %u", (signed int)local_port);
+        return 1;
+    }
+    if(eee.local_sock_ena)
+    {
+        if (set_localip(&eee) != 0)
+        {
+            traceEvent(TRACE_ERROR, "set localip failed");
+            return 1;
+        }
+    }
+
+    /* set host addr, netmask, mac addr for UIP and init arp*/
+    {
+        int match, i;
+        u8_t ip[4];
+        uip_ipaddr_t ipaddr;
+        struct uip_eth_addr eaddr;
+
+        match = sscanf(ip_addr, "%d.%d.%d.%d", ip, ip + 1, ip + 2, ip + 3);
+        if (match != 4) {
+            traceEvent(TRACE_ERROR, "scan ip failed, ip: %s", ip_addr);
+            return 1;
+        }
+        uip_ipaddr(ipaddr, ip[0], ip[1], ip[2], ip[3]);
+        uip_sethostaddr(ipaddr);
+        match = sscanf(netmask, "%d.%d.%d.%d", ip, ip + 1, ip + 2, ip + 3);
+        if (match != 4) {
+            traceEvent(TRACE_ERROR, "scan netmask error, ip: %s", netmask);
+            return 1;
+        }
+        uip_ipaddr(ipaddr, ip[0], ip[1], ip[2], ip[3]);
+        uip_setnetmask(ipaddr);
+        for (i = 0; i < 6; ++i) {
+            eaddr.addr[i] = eee.device.mac_addr[i];
+        }
+        uip_setethaddr(eaddr);
+
+        uip_arp_init();
+    }
+
+    keep_running = 1;
+    traceEvent(TRACE_NORMAL, "edge started");
+
+    update_supernode_reg(&eee, time(NULL));
+
+    return run_loop(&eee);
+}
+
+int stop_edge(void)
+{
+    keep_running = 0;
+    return 0;
+}
+#endif /* #ifdef __ANDROID_NDK__ */

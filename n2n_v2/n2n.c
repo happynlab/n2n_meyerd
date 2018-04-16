@@ -98,6 +98,26 @@ SOCKET open_socket(int local_port, int bind_any) {
 int traceLevel = 2 /* NORMAL */;
 int useSyslog = 0, syslog_opened = 0;
 
+#ifdef __ANDROID_NDK__
+int android_log_level(int lvl)
+{
+    switch (lvl) {
+        case 0:         // ERROR
+            return ANDROID_LOG_ERROR;
+        case 1:         // WARNING
+            return ANDROID_LOG_WARN;
+        case 2:         // NORMAL
+            return ANDROID_LOG_INFO;
+        case 3:         // INFO
+            return ANDROID_LOG_DEBUG;
+        case 4:         // DEBUG
+            return  ANDROID_LOG_VERBOSE;
+        default:        // NORMAL
+            return ANDROID_LOG_INFO;
+    }
+}
+#endif /* #ifdef __ANDROID_NDK__ */
+
 #define N2N_TRACE_DATESIZE 32
 void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...) {
   va_list va_ap;
@@ -143,8 +163,12 @@ void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...) {
       syslog(LOG_INFO, "%s", out_buf);
     } else {
       snprintf(out_buf, sizeof(out_buf), "%s [%11s:%4d] %s%s", theDate, file, line, extra_msg, buf);
+#ifdef __ANDROID_NDK__
+      __android_log_print(android_log_level(eventTraceLevel), "n2n_v2s", "%s\n", out_buf);
+#else
       printf("%s\n", out_buf);
       fflush(stdout);
+#endif /* __ANDROID_NDK__ */
     }
 #else
     /* this is the WIN32 code */
@@ -253,14 +277,38 @@ void hexdump(const uint8_t * buf, size_t len)
 
 /* *********************************************** */
 
-void print_n2n_version() {
-  printf("Welcome to n2n v.%s for %s\n"
-         "Built on %s\n"
-	 "Copyright 2007-09 - http://www.ntop.org\n\n",
-         n2n_sw_version, n2n_sw_osName, n2n_sw_buildDate);
+void print_n2n_version(int trace) {
+    const char* bufline = "Welcome to n2n v.%s for %s\n"
+                    "Built on %s\n"
+                    "Copyright 2007-09 - http://www.ntop.org\n"
+                    "Modify version v%s\n"
+                    "Modify by %s\n"
+                    "Modify Copyright 2018 - %d - https://github.com/switch-iot/n2n_vLTS\n\n";
+    time_t t = time(NULL);
+    if (trace == 1) {
+        traceEvent(TRACE_NORMAL, bufline, n2n_sw_version, n2n_sw_osName, n2n_sw_buildDate, n2n_mod_version, n2n_mod_author, localtime(&t)->tm_year + 1900);
+    } else {
+        printf(bufline, bufline, n2n_sw_version, n2n_sw_osName, n2n_sw_buildDate, n2n_mod_version, n2n_mod_author, localtime(&t)->tm_year + 1900);
+    }
 }
 
+const char* random_device_mac(void)
+{
+    const char key[] = "0123456789abcdef";
+    static char mac[18];
+    int i;
 
+    srand(getpid());
+    for (i = 0; i < sizeof(mac); ++i)
+    {
+        if (i + 1 % 3 == 0) {
+            mac[i] = ':';
+            continue;
+        }
+        mac[i] = random() % sizeof(key);
+    }
+    return mac;
+}
 
 
 /** Find the peer entry in list with mac_addr equal to mac.

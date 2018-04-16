@@ -104,6 +104,12 @@ typedef struct ether_hdr ether_hdr_t;
 #undef N2N_HAVE_DAEMON
 #endif /* #ifdef __sun__ */
 
+#ifdef __ANDROID_NDK__
+#undef N2N_HAVE_DAEMON
+#undef N2N_HAVE_SETUID
+#undef N2N_CAN_NAME_IFACE
+#endif /* #ifdef __ANDROID_NDK__ */
+
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/udp.h>
@@ -220,11 +226,16 @@ typedef struct n2n_edge         n2n_edge_t;
 
 /* ************************************** */
 
+#ifdef __ANDROID_NDK__
+#include <android/log.h>
+int android_log_level(int lvl);
+#endif /* #ifdef __ANDROID_NDK__ */
 #define TRACE_ERROR     0, __FILE__, __LINE__
 #define TRACE_WARNING   1, __FILE__, __LINE__
 #define TRACE_NORMAL    2, __FILE__, __LINE__
 #define TRACE_INFO      3, __FILE__, __LINE__
 #define TRACE_DEBUG     4, __FILE__, __LINE__
+
 
 /* ************************************** */
 
@@ -274,7 +285,8 @@ extern uint8_t is_multi_broadcast(const uint8_t * dest_mac);
 extern char* msg_type2str(uint16_t msg_type);
 extern void hexdump(const uint8_t * buf, size_t len);
 
-void print_n2n_version();
+void print_n2n_version(int trace);
+const char* random_device_mac(void);
 
 
 /* Operations on peer_info lists. */
@@ -295,6 +307,6 @@ size_t purge_expired_registrations( struct peer_info ** peer_list );
 size_t hashed_purge_expired_registrations(struct peer_info ** peer_list);
 
 /* version.c */
-extern char *n2n_sw_version, *n2n_sw_osName, *n2n_sw_buildDate;
+extern char *n2n_sw_version, *n2n_sw_osName, *n2n_sw_buildDate, *n2n_mod_version, *n2n_mod_author;
 
 #endif /* _N2N_H_ */
