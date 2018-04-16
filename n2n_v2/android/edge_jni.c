@@ -8,6 +8,8 @@
 
 static int GetEdgeCmd(JNIEnv *env, jobject jcmd, n2n_edge_cmd_t* cmd);
 static void* EdgeRoutine(void* cmd);
+static n2n_edge_cmd_t cmd;
+static pthread_t tid = -1;
 
 JNIEXPORT jboolean JNICALL Java_wang_switchy_an2n_N2NService_startEdge(
         JNIEnv *env,
@@ -15,7 +17,6 @@ JNIEXPORT jboolean JNICALL Java_wang_switchy_an2n_N2NService_startEdge(
         jobject jcmd) {
 
     __android_log_write(LOG_DEBUG, "edge_jni", "in start");
-    n2n_edge_cmd_t cmd;
     if (GetEdgeCmd(env, jcmd, &cmd) != 0) {
         goto ERROR;
     }
@@ -32,25 +33,25 @@ JNIEXPORT jboolean JNICALL Java_wang_switchy_an2n_N2NService_startEdge(
         }
     }
 
-    pthread_t tid;
+    if (tid != -1) {
+        stop_edge();
+        pthread_kill(tid, SIGINT);
+        pthread_join(tid, NULL);
+        tid = -1;
+    }
     int ret = pthread_create(&tid, NULL, EdgeRoutine, &cmd);
     if (ret != 0) {
+        tid = -1;
         goto ERROR;
     }
-    struct timespec spec = {0, 500000000};  // 500ms
-    nanosleep(&spec, NULL);     // Wait for args check to complete
-    ret = pthread_detach(tid);
-    if (ret != 0) {
-        goto ERROR;
-    }
-    free(cmd.enc_key);
-    free(cmd.enc_key_file);
 
     return JNI_TRUE;
 
 ERROR:
     free(cmd.enc_key);
     free(cmd.enc_key_file);
+    cmd.enc_key = NULL;
+    cmd.enc_key_file = NULL;
     return JNI_FALSE;
 }
 
@@ -60,6 +61,8 @@ JNIEXPORT void JNICALL Java_wang_switchy_an2n_N2NService_stopEdge(
 
     __android_log_write(LOG_DEBUG, "edge_jni", "in stop");
     stop_edge();
+    pthread_join(tid, NULL);
+    tid = -1;
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -70,7 +73,7 @@ JNIEXPORT void JNICALL Java_wang_switchy_an2n_N2NService_stopEdge(
 int GetEdgeCmd(JNIEnv *env, jobject jcmd, n2n_edge_cmd_t* cmd)
 {
     jclass cls;
-    int i;
+    int i, j;
 
     INIT_EDGE_CMD(*cmd);
     cls = (*env)->GetObjectClass(env, jcmd);
@@ -110,17 +113,24 @@ int GetEdgeCmd(JNIEnv *env, jobject jcmd, n2n_edge_cmd_t* cmd)
         if (len <= 0) {
             return 1;
         }
-        for (i = 0; i < len && i < EDGE_CMD_SUPERNODES_NUM; ++i) {
-            const char* jsNode = (*env)->GetObjectArrayElement(env, jaSupernodes, i);
-            JNI_CHECKNULL(jsNode);
+        for (i = 0, j = 0; i < len && i < EDGE_CMD_SUPERNODES_NUM; ++i) {
+            const jobject jsNode = (*env)->GetObjectArrayElement(env, jaSupernodes, i);
+            if (!jsNode) {
+                continue;
+            }
             const char* node = (*env)->GetStringUTFChars(env, jsNode, NULL);
             if (!node || strlen(node) == 0) {
                 (*env)->ReleaseStringUTFChars(env, jsNode, node);
-                return 1;
+                continue;
             }
-            strncpy(cmd->supernodes[i], node, EDGE_CMD_SN_HOST_SIZE);
+            strncpy(cmd->supernodes[j], node, EDGE_CMD_SN_HOST_SIZE);
             (*env)->ReleaseStringUTFChars(env, jsNode, node);
-            __android_log_print(LOG_DEBUG, "edge_jni", "supernodes = %s", cmd->supernodes[i]);
+            __android_log_print(LOG_DEBUG, "edge_jni", "supernodes = %s", cmd->supernodes[j]);
+            j++;
+        }
+        __android_log_print(LOG_DEBUG, "edge_jni", "j = %d", j);
+        if (j == 0) {
+            return 1;
         }
     }
     // community
@@ -165,11 +175,9 @@ int GetEdgeCmd(JNIEnv *env, jobject jcmd, n2n_edge_cmd_t* cmd)
         jstring jsMacAddr = (*env)->GetObjectField(env, jcmd, (*env)->GetFieldID(env, cls, "macAddr", "Ljava/lang/String;"));
         JNI_CHECKNULL(jsMacAddr);
         const char* macAddr = (*env)->GetStringUTFChars(env, jsMacAddr, NULL);
-        if (!macAddr || strlen(macAddr) == 0) {
-            (*env)->ReleaseStringUTFChars(env, jsMacAddr, macAddr);
-            return 1;
+        if (macAddr && strlen(macAddr) != 0) {
+            strncpy(cmd->mac_addr, macAddr, EDGE_CMD_MACNAMSIZ);
         }
-        strncpy(cmd->mac_addr, macAddr, EDGE_CMD_MACNAMSIZ);
         (*env)->ReleaseStringUTFChars(env, jsMacAddr, macAddr);
         __android_log_print(LOG_DEBUG, "edge_jni", "macAddr = %s", cmd->mac_addr);
     }
@@ -252,5 +260,9 @@ void* EdgeRoutine(void* cmd)
 {
     n2n_edge_cmd_t* c = cmd;
     int ret = start_edge(c);
+    free(c->enc_key);
+    free(c->enc_key_file);
+    c->enc_key = NULL;
+    c->enc_key_file = NULL;
     return (void*)ret;
 }

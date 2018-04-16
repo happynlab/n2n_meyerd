@@ -2807,6 +2807,13 @@ static int run_loop(n2n_edge_t * eee )
                 readFromIPSocket(eee);
             }
 
+#ifdef __ANDROID_NDK__
+            if (uip_arp_len != 0) {
+                readFromTAPSocket(eee);
+                uip_arp_len = 0;
+            }
+#endif /* #ifdef __ANDROID_NDK__ */
+
 #ifndef __ANDROID_NDK__
             if(FD_ISSET(eee->udp_mgmt_sock, &socket_mask))
             {
@@ -2824,12 +2831,6 @@ static int run_loop(n2n_edge_t * eee )
                 readFromTAPSocket(eee);
             }
 #endif
-#ifdef __ANDROID_NDK__
-            if (uip_arp_len != 0) {
-                readFromTAPSocket(eee);
-                uip_arp_len = 0;
-            }
-#endif /* #ifdef __ANDROID_NDK__ */
         }
 
         /* Finished processing select data. */
@@ -2879,11 +2880,10 @@ static int run_loop(n2n_edge_t * eee )
     } /* while */
 
     send_deregister( eee, &(eee->supernode));
-
-    closesocket(eee->udp_sock);
     tuntap_close(&(eee->device));
-
     edge_deinit( eee );
+
+    traceEvent(TRACE_NORMAL, "Edge stoped.");
 
     return(0);
 }
@@ -2923,6 +2923,10 @@ int start_edge(const n2n_edge_cmd_t* cmd)
         traceEvent( TRACE_ERROR, "Empty cmd struct" );
         return 1;
     }
+
+    traceLevel = cmd->trace_vlevel;
+    traceLevel = traceLevel < 0 ? 0 : traceLevel;   /* TRACE_ERROR */
+    traceLevel = traceLevel > 4 ? 4 : traceLevel;   /* TRACE_DEBUG */
 
     if (-1 == edge_init(&eee) )
     {
@@ -3009,9 +3013,6 @@ int start_edge(const n2n_edge_cmd_t* cmd)
     {
         strncpy(netmask, cmd->ip_netmask, N2N_NETMASK_STR_SIZE);
     }
-    traceLevel = cmd->trace_vlevel;
-    traceLevel = traceLevel < TRACE_ERROR ? TRACE_ERROR : traceLevel;
-    traceLevel = traceLevel > TRACE_DEBUG ? TRACE_DEBUG : traceLevel;
 
 
     print_n2n_version(1 /* trace */);
