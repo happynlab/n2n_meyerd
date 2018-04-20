@@ -281,7 +281,7 @@ void print_n2n_version(int trace) {
     const char* bufline = "Welcome to n2n v.%s for %s\n"
                     "Built on %s\n"
                     "Copyright 2007-09 - http://www.ntop.org\n"
-                    "Modify version v%s\n"
+                    "Modify version %s\n"
                     "Modify by %s\n"
                     "Modify Copyright 2018 - %d - https://github.com/switch-iot/n2n_vLTS\n\n";
     time_t t = time(NULL);
@@ -299,14 +299,15 @@ const char* random_device_mac(void)
     int i;
 
     srand(getpid());
-    for (i = 0; i < sizeof(mac); ++i)
+    for (i = 0; i < sizeof(mac) - 1; ++i)
     {
-        if (i + 1 % 3 == 0) {
+        if ((i + 1) % 3 == 0) {
             mac[i] = ':';
             continue;
         }
-        mac[i] = random() % sizeof(key);
+        mac[i] = key[random() % sizeof(key)];
     }
+    mac[sizeof(mac) - 1] = '\0';
     return mac;
 }
 

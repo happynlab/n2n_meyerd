@@ -43,7 +43,7 @@ int tuntap_open(tuntap_dev *device,
                 char *device_ip, 
                 char *device_mask,
                 const char * device_mac,
-		int mtu) {
+		        int mtu) {
     int i, n_matched;
     unsigned int mac[6];
 
@@ -51,7 +51,9 @@ int tuntap_open(tuntap_dev *device,
     if (n_matched != 6) {
         return -1;
     }
-    memcpy(device->mac_addr, mac, sizeof(mac));
+    memset(device->mac_addr, 0, sizeof(device->mac_addr));
+    for (i = 0; i < 6; i++)
+        device->mac_addr[i] = mac[i];
     device->ip_addr = inet_addr(device_ip);
     device->device_mask = inet_addr(device_mask);
     device->mtu = mtu;
