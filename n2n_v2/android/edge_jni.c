@@ -16,7 +16,9 @@ JNIEXPORT jboolean JNICALL Java_wang_switchy_an2n_N2NService_startEdge(
         jobject this,
         jobject jcmd) {
 
+#ifndef NDEBUG
     __android_log_write(LOG_DEBUG, "edge_jni", "in start");
+#endif /* #ifndef NDEBUG */
     if (GetEdgeCmd(env, jcmd, &cmd) != 0) {
         goto ERROR;
     }
@@ -59,7 +61,9 @@ JNIEXPORT void JNICALL Java_wang_switchy_an2n_N2NService_stopEdge(
         JNIEnv *env,
         jobject this) {
 
+#ifndef NDEBUG
     __android_log_write(LOG_DEBUG, "edge_jni", "in stop");
+#endif /* #ifndef NDEBUG */
     stop_edge();
     pthread_join(tid, NULL);
     tid = -1;
@@ -90,7 +94,9 @@ int GetEdgeCmd(JNIEnv *env, jobject jcmd, n2n_edge_cmd_t* cmd)
         }
         strncpy(cmd->ip_addr, ipAddr, EDGE_CMD_IPSTR_SIZE);
         (*env)->ReleaseStringUTFChars(env, jsIpAddr, ipAddr);
+#ifndef NDEBUG
         __android_log_print(LOG_DEBUG, "edge_jni", "ipAddr = %s", cmd->ip_addr);
+#endif /* #ifndef NDEBUG */
     }
     // ipNetmask
     {
@@ -103,7 +109,9 @@ int GetEdgeCmd(JNIEnv *env, jobject jcmd, n2n_edge_cmd_t* cmd)
         }
         strncpy(cmd->ip_netmask, ipNetmask, EDGE_CMD_IPSTR_SIZE);
         (*env)->ReleaseStringUTFChars(env, jsIpNetmask, ipNetmask);
+#ifndef NDEBUG
         __android_log_print(LOG_DEBUG, "edge_jni", "ipNetmask = %s", cmd->ip_netmask);
+#endif /* #ifndef NDEBUG */
     }
     // supernodes
     {
@@ -125,10 +133,14 @@ int GetEdgeCmd(JNIEnv *env, jobject jcmd, n2n_edge_cmd_t* cmd)
             }
             strncpy(cmd->supernodes[j], node, EDGE_CMD_SN_HOST_SIZE);
             (*env)->ReleaseStringUTFChars(env, jsNode, node);
+#ifndef NDEBUG
             __android_log_print(LOG_DEBUG, "edge_jni", "supernodes = %s", cmd->supernodes[j]);
+#endif /* #ifndef NDEBUG */
             j++;
         }
+#ifndef NDEBUG
         __android_log_print(LOG_DEBUG, "edge_jni", "j = %d", j);
+#endif /* #ifndef NDEBUG */
         if (j == 0) {
             return 1;
         }
@@ -144,7 +156,9 @@ int GetEdgeCmd(JNIEnv *env, jobject jcmd, n2n_edge_cmd_t* cmd)
         }
         strncpy(cmd->community, community, N2N_COMMUNITY_SIZE);
         (*env)->ReleaseStringUTFChars(env, jsCommunity, community);
+#ifndef NDEBUG
         __android_log_print(LOG_DEBUG, "edge_jni", "community = %s", cmd->community);
+#endif /* #ifndef NDEBUG */
     }
     // encKey
     {
@@ -155,7 +169,9 @@ int GetEdgeCmd(JNIEnv *env, jobject jcmd, n2n_edge_cmd_t* cmd)
                 cmd->enc_key = strdup(encKey);
             }
             (*env)->ReleaseStringUTFChars(env, jsEncKey, encKey);
+#ifndef NDEBUG
             __android_log_print(LOG_DEBUG, "edge_jni", "encKey = %s", cmd->enc_key);
+#endif /* #ifndef NDEBUG */
         }
     }
     // encKeyFile
@@ -167,7 +183,9 @@ int GetEdgeCmd(JNIEnv *env, jobject jcmd, n2n_edge_cmd_t* cmd)
                 cmd->enc_key_file = strdup(encKeyFile);
             }
             (*env)->ReleaseStringUTFChars(env, jsEncKeyFile, encKeyFile);
+#ifndef NDEBUG
             __android_log_print(LOG_DEBUG, "edge_jni", "encKeyFile = %s", cmd->enc_key_file);
+#endif /* #ifndef NDEBUG */
         }
     }
     // macAddr
@@ -179,7 +197,9 @@ int GetEdgeCmd(JNIEnv *env, jobject jcmd, n2n_edge_cmd_t* cmd)
             strncpy(cmd->mac_addr, macAddr, EDGE_CMD_MACNAMSIZ);
         }
         (*env)->ReleaseStringUTFChars(env, jsMacAddr, macAddr);
+#ifndef NDEBUG
         __android_log_print(LOG_DEBUG, "edge_jni", "macAddr = %s", cmd->mac_addr);
+#endif /* #ifndef NDEBUG */
     }
     // mtu
     {
@@ -188,7 +208,9 @@ int GetEdgeCmd(JNIEnv *env, jobject jcmd, n2n_edge_cmd_t* cmd)
             return 1;
         }
         cmd->mtu = jiMtu;
+#ifndef NDEBUG
         __android_log_print(LOG_DEBUG, "edge_jni", "mtu = %d", cmd->mtu);
+#endif /* #ifndef NDEBUG */
     }
     // localIP
     {
@@ -199,7 +221,9 @@ int GetEdgeCmd(JNIEnv *env, jobject jcmd, n2n_edge_cmd_t* cmd)
             strncpy(cmd->local_ip, localIP, EDGE_CMD_IPSTR_SIZE);
         }
         (*env)->ReleaseStringUTFChars(env, jsLocalIP, localIP);
+#ifndef NDEBUG
         __android_log_print(LOG_DEBUG, "edge_jni", "localIP = %s", cmd->local_ip);
+#endif /* #ifndef NDEBUG */
     }
     // holePunchInterval
     {
@@ -208,13 +232,17 @@ int GetEdgeCmd(JNIEnv *env, jobject jcmd, n2n_edge_cmd_t* cmd)
             return 1;
         }
         cmd->holepunch_interval = jiHolePunchInterval;
+#ifndef NDEBUG
         __android_log_print(LOG_DEBUG, "edge_jni", "holePunchInterval = %d", cmd->holepunch_interval);
+#endif /* #ifndef NDEBUG */
     }
     // reResoveSupernodeIP
     {
         jboolean jbReResoveSupernodeIP= (*env)->GetBooleanField(env, jcmd, (*env)->GetFieldID(env, cls, "reResoveSupernodeIP", "Z"));
         cmd->re_resolve_supernode_ip = jbReResoveSupernodeIP ? 1 : 0;
+#ifndef NDEBUG
         __android_log_print(LOG_DEBUG, "edge_jni", "reResoveSupernodeIP = %d", cmd->re_resolve_supernode_ip);
+#endif /* #ifndef NDEBUG */
     }
     // localPort
     {
@@ -223,25 +251,33 @@ int GetEdgeCmd(JNIEnv *env, jobject jcmd, n2n_edge_cmd_t* cmd)
             return 1;
         }
         cmd->local_port = jiLocalPort;
+#ifndef NDEBUG
         __android_log_print(LOG_DEBUG, "edge_jni", "localPort = %d", cmd->local_port);
+#endif /* #ifndef NDEBUG */
     }
     // reResoveSupernodeIP
     {
         jboolean jbAllowRouting= (*env)->GetBooleanField(env, jcmd, (*env)->GetFieldID(env, cls, "allowRouting", "Z"));
         cmd->allow_routing = jbAllowRouting ? 1 : 0;
+#ifndef NDEBUG
         __android_log_print(LOG_DEBUG, "edge_jni", "allowRouting = %d", cmd->allow_routing);
+#endif /* #ifndef NDEBUG */
     }
     // dropMuticast
     {
         jboolean jbDropMuticast= (*env)->GetBooleanField(env, jcmd, (*env)->GetFieldID(env, cls, "dropMuticast", "Z"));
         cmd->drop_multicast = jbDropMuticast ? 1 : 0;
+#ifndef NDEBUG
         __android_log_print(LOG_DEBUG, "edge_jni", "dropMuticast = %d", cmd->drop_multicast);
+#endif /* #ifndef NDEBUG */
     }
     // traceLevel
     {
         jint jiTraceLevel = (*env)->GetIntField(env, jcmd, (*env)->GetFieldID(env, cls, "traceLevel", "I"));
         cmd->trace_vlevel = jiTraceLevel;
+#ifndef NDEBUG
         __android_log_print(LOG_DEBUG, "edge_jni", "traceLevel = %d", cmd->trace_vlevel);
+#endif /* #ifndef NDEBUG */
     }
     // vpnFd
     {
@@ -250,7 +286,9 @@ int GetEdgeCmd(JNIEnv *env, jobject jcmd, n2n_edge_cmd_t* cmd)
             return 1;
         }
         cmd->vpn_fd = jiVpnFd;
+#ifndef NDEBUG
         __android_log_print(LOG_DEBUG, "edge_jni", "vpnFd = %d", cmd->vpn_fd);
+#endif /* #ifndef NDEBUG */
     }
 
     return 0;

@@ -99,6 +99,7 @@ int traceLevel = 2 /* NORMAL */;
 int useSyslog = 0, syslog_opened = 0;
 
 #ifdef __ANDROID_NDK__
+slog_t* slog = NULL;
 int android_log_level(int lvl)
 {
     switch (lvl) {
@@ -162,13 +163,17 @@ void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...) {
       snprintf(out_buf, sizeof(out_buf), "%s%s", extra_msg, buf);
       syslog(LOG_INFO, "%s", out_buf);
     } else {
+#ifdef __ANDROID_NDK__
+        char * p = strrchr(file, '/');
+        file = (p ? p + 1 : file);
+#endif /* #ifdef __ANDROID_NDK__ */
       snprintf(out_buf, sizeof(out_buf), "%s [%11s:%4d] %s%s", theDate, file, line, extra_msg, buf);
 #ifdef __ANDROID_NDK__
-      __android_log_print(android_log_level(eventTraceLevel), "n2n_v2s", "%s\n", out_buf);
-#else
+            slog = writeslog(slog, android_log_level(eventTraceLevel), "n2n_v2s", out_buf);
+#else /* #ifdef __ANDROID_NDK__ */
       printf("%s\n", out_buf);
       fflush(stdout);
-#endif /* __ANDROID_NDK__ */
+#endif /* #ifdef __ANDROID_NDK__ */
     }
 #else
     /* this is the WIN32 code */

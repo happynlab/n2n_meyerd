@@ -2884,6 +2884,10 @@ static int run_loop(n2n_edge_t * eee )
     edge_deinit( eee );
 
     traceEvent(TRACE_NORMAL, "Edge stoped.");
+    if (!slog) {
+        closeslog(slog);
+        slog = NULL;
+    }
 
     return(0);
 }
@@ -2927,10 +2931,19 @@ int start_edge(const n2n_edge_cmd_t* cmd)
     traceLevel = cmd->trace_vlevel;
     traceLevel = traceLevel < 0 ? 0 : traceLevel;   /* TRACE_ERROR */
     traceLevel = traceLevel > 4 ? 4 : traceLevel;   /* TRACE_DEBUG */
+    if (!slog) {
+        closeslog(slog);
+        slog = NULL;
+    }
+    slog = initslog(android_log_level(traceLevel), N2N_LOG_FILEPATH);
 
     if (-1 == edge_init(&eee) )
     {
         traceEvent( TRACE_ERROR, "Failed in edge_init" );
+        if (!slog) {
+            closeslog(slog);
+            slog = NULL;
+        }
         return 1;
     }
     memset(&(eee.supernode), 0, sizeof(eee.supernode));
@@ -2938,6 +2951,10 @@ int start_edge(const n2n_edge_cmd_t* cmd)
 
     if (cmd->vpn_fd == -1) {
         traceEvent(TRACE_ERROR, "VPN socket is invalid.");
+        if (!slog) {
+            closeslog(slog);
+            slog = NULL;
+        }
         return 1;
     }
     eee.device.fd = cmd->vpn_fd;
@@ -2963,6 +2980,10 @@ int start_edge(const n2n_edge_cmd_t* cmd)
     {
         traceEvent(TRACE_ERROR, "Ip address is not set.");
         free(encrypt_key);
+        if (!slog) {
+            closeslog(slog);
+            slog = NULL;
+        }
         return 1;
     }
     if (cmd->community[0] != '\0')
@@ -2973,6 +2994,10 @@ int start_edge(const n2n_edge_cmd_t* cmd)
     {
         traceEvent(TRACE_ERROR, "Community is not set.");
         free(encrypt_key);
+        if (!slog) {
+            closeslog(slog);
+            slog = NULL;
+        }
         return 1;
     }
     eee.drop_multicast = cmd->drop_multicast == 0 ? 0 : 1;
@@ -3039,7 +3064,11 @@ int start_edge(const n2n_edge_cmd_t* cmd)
     {
         traceEvent(TRACE_ERROR, "Failed in tuntap_open");
         free(encrypt_key);
-        return -1;
+        if (!slog) {
+            closeslog(slog);
+            slog = NULL;
+        }
+        return 1;
     }
     if(local_port > 0)
     {
@@ -3051,6 +3080,10 @@ int start_edge(const n2n_edge_cmd_t* cmd)
         {
             traceEvent(TRACE_ERROR, "twofish setup failed.\n");
             free(encrypt_key);
+            if (!slog) {
+                closeslog(slog);
+                slog = NULL;
+            }
             return 1;
         }
         free(encrypt_key);
@@ -3062,7 +3095,11 @@ int start_edge(const n2n_edge_cmd_t* cmd)
         {
             traceEvent(TRACE_ERROR, "keyschedule setup failed.\n");
             free(encrypt_key);
-            return(-1);
+            if (!slog) {
+                closeslog(slog);
+                slog = NULL;
+            }
+            return 1;
         }
     }
     /* else run in NULL mode */
@@ -3070,6 +3107,10 @@ int start_edge(const n2n_edge_cmd_t* cmd)
     if(eee.udp_sock < 0)
     {
         traceEvent(TRACE_ERROR, "Failed to bind main UDP port %u", (signed int)local_port);
+        if (!slog) {
+            closeslog(slog);
+            slog = NULL;
+        }
         return 1;
     }
     if(eee.local_sock_ena)
@@ -3077,6 +3118,10 @@ int start_edge(const n2n_edge_cmd_t* cmd)
         if (set_localip(&eee) != 0)
         {
             traceEvent(TRACE_ERROR, "set localip failed");
+            if (!slog) {
+                closeslog(slog);
+                slog = NULL;
+            }
             return 1;
         }
     }
@@ -3091,6 +3136,10 @@ int start_edge(const n2n_edge_cmd_t* cmd)
         match = sscanf(ip_addr, "%d.%d.%d.%d", ip, ip + 1, ip + 2, ip + 3);
         if (match != 4) {
             traceEvent(TRACE_ERROR, "scan ip failed, ip: %s", ip_addr);
+            if (!slog) {
+                closeslog(slog);
+                slog = NULL;
+            }
             return 1;
         }
         uip_ipaddr(ipaddr, ip[0], ip[1], ip[2], ip[3]);
@@ -3098,6 +3147,10 @@ int start_edge(const n2n_edge_cmd_t* cmd)
         match = sscanf(netmask, "%d.%d.%d.%d", ip, ip + 1, ip + 2, ip + 3);
         if (match != 4) {
             traceEvent(TRACE_ERROR, "scan netmask error, ip: %s", netmask);
+            if (!slog) {
+                closeslog(slog);
+                slog = NULL;
+            }
             return 1;
         }
         uip_ipaddr(ipaddr, ip[0], ip[1], ip[2], ip[3]);
