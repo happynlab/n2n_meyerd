@@ -1481,7 +1481,7 @@ static int handle_PACKET( n2n_edge_t * eee,
         uint8_t decodebuffer[N2N_PKT_BUF_SIZE];
         uint8_t * decodebuf = decodebuffer;
         size_t eth_size;
-        size_t rx_transop_idx=0;
+        int rx_transop_idx=0;
         int offset;
 
         /* copy eth header to decodebuf */
@@ -2923,6 +2923,9 @@ int start_edge(const n2n_edge_cmd_t* cmd)
     int i;
 
     keep_running = 0;
+    pthread_mutex_lock(&status.mutex);
+    status.is_running = keep_running;
+    pthread_mutex_unlock(&status.mutex);
     if (!cmd) {
         traceEvent( TRACE_ERROR, "Empty cmd struct" );
         return 1;
@@ -2949,7 +2952,7 @@ int start_edge(const n2n_edge_cmd_t* cmd)
     memset(&(eee.supernode), 0, sizeof(eee.supernode));
     eee.supernode.family = AF_INET;
 
-    if (cmd->vpn_fd == -1) {
+    if (cmd->vpn_fd < 0) {
         traceEvent(TRACE_ERROR, "VPN socket is invalid.");
         if (!slog) {
             closeslog(slog);
@@ -3164,6 +3167,9 @@ int start_edge(const n2n_edge_cmd_t* cmd)
     }
 
     keep_running = 1;
+    pthread_mutex_lock(&status.mutex);
+    status.is_running = keep_running;
+    pthread_mutex_unlock(&status.mutex);
     traceEvent(TRACE_NORMAL, "edge started");
 
     update_supernode_reg(&eee, time(NULL));
@@ -3174,6 +3180,9 @@ int start_edge(const n2n_edge_cmd_t* cmd)
 int stop_edge(void)
 {
     keep_running = 0;
+    pthread_mutex_lock(&status.mutex);
+    status.is_running = keep_running;
+    pthread_mutex_unlock(&status.mutex);
     return 0;
 }
 #endif /* #ifdef __ANDROID_NDK__ */

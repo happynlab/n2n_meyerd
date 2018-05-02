@@ -8,6 +8,7 @@
 #ifdef __ANDROID_NDK__
 
 #include "../n2n.h"
+#include <pthread.h>
 
 #define EDGE_CMD_IPSTR_SIZE 16
 #define EDGE_CMD_SUPERNODES_NUM 2
@@ -16,7 +17,7 @@
 #define EDGE_CMD_HOLEPUNCH_INTERVAL 25
 
 
-typedef struct n2n_edge_cmd
+typedef struct n2n_edge_cmd_st
 {
     char ip_addr[EDGE_CMD_IPSTR_SIZE];
     char ip_netmask[EDGE_CMD_IPSTR_SIZE];
@@ -36,6 +37,12 @@ typedef struct n2n_edge_cmd
     int vpn_fd;
 } n2n_edge_cmd_t;
 
+typedef struct n2n_edge_status_st
+{
+    pthread_mutex_t mutex;
+    uint8_t is_running;
+} n2n_edge_status;
+
 #define INIT_EDGE_CMD(cmd)      do {\
     memset(&(cmd), 0, sizeof((cmd))); \
     (cmd).enc_key = NULL;             \
@@ -49,6 +56,8 @@ typedef struct n2n_edge_cmd
     (cmd).trace_vlevel = 2;           \
     (cmd).vpn_fd = -1;                \
 } while (0);
+
+n2n_edge_status status;
 
 int start_edge(const n2n_edge_cmd_t* cmd);
 int stop_edge(void);

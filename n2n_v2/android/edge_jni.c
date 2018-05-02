@@ -40,7 +40,9 @@ JNIEXPORT jboolean JNICALL Java_wang_switchy_an2n_N2NService_startEdge(
         pthread_kill(tid, SIGINT);
         pthread_join(tid, NULL);
         tid = -1;
+        pthread_mutex_destroy(&status.mutex);
     }
+    pthread_mutex_init(&status.mutex, NULL);
     int ret = pthread_create(&tid, NULL, EdgeRoutine, &cmd);
     if (ret != 0) {
         tid = -1;
@@ -67,6 +69,27 @@ JNIEXPORT void JNICALL Java_wang_switchy_an2n_N2NService_stopEdge(
     stop_edge();
     pthread_join(tid, NULL);
     tid = -1;
+    pthread_mutex_destroy(&status.mutex);
+}
+
+JNIEXPORT void JNICALL Java_wang_switchy_an2n_N2NService_getEdgeStatus(
+        JNIEnv *env,
+        jobject this,
+        jobject jstatus) {
+
+    jboolean is_running = JNI_FALSE;
+    if (tid != -1) {
+        is_running = pthread_kill(tid, 0) ? JNI_FALSE : JNI_TRUE;
+    }
+    pthread_mutex_lock(&status.mutex);
+    is_running = is_running && status.is_running;
+    pthread_mutex_unlock(&status.mutex);
+
+    jclass cls = (*env)->GetObjectClass(env, jstatus);
+    if (!cls) {
+        return;
+    }
+    (*env)->SetBooleanField(env, jstatus, (*env)->GetFieldID(env, cls, "isRunning", "Z"), is_running);
 }
 
 /////////////////////////////////////////////////////////////////////////
