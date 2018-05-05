@@ -10,6 +10,9 @@ static int GetEdgeCmd(JNIEnv *env, jobject jcmd, n2n_edge_cmd_t* cmd);
 static void* EdgeRoutine(void* cmd);
 static n2n_edge_cmd_t cmd;
 static pthread_t tid = -1;
+static JavaVM* jvm = NULL;
+static jobject jobj_service = NULL;
+static jclass jcls_status = NULL;
 
 JNIEXPORT jboolean JNICALL Java_wang_switchy_an2n_N2NService_startEdge(
         JNIEnv *env,
@@ -40,8 +43,28 @@ JNIEXPORT jboolean JNICALL Java_wang_switchy_an2n_N2NService_startEdge(
         pthread_kill(tid, SIGINT);
         pthread_join(tid, NULL);
         tid = -1;
+        if (jcls_status) {
+            (*env)->DeleteGlobalRef(env, jcls_status);
+            jcls_status = NULL;
+        }
+        if (jobj_service) {
+            (*env)->DeleteGlobalRef(env, jobj_service);
+            jobj_service = NULL;
+        }
+        jvm = NULL;
         pthread_mutex_destroy(&status.mutex);
     }
+
+    if ((*env)->GetJavaVM(env, &jvm) != JNI_OK) {
+        goto ERROR;
+    }
+    jobj_service = (*env)->NewGlobalRef(env, this);
+    jclass cls = (*env)->FindClass(env, "wang/switchy/an2n/model/EdgeStatus");
+    if (!cls) {
+        goto ERROR;
+    }
+    jcls_status = (*env)->NewGlobalRef(env, cls);
+
     pthread_mutex_init(&status.mutex, NULL);
     int ret = pthread_create(&tid, NULL, EdgeRoutine, &cmd);
     if (ret != 0) {
@@ -52,6 +75,16 @@ JNIEXPORT jboolean JNICALL Java_wang_switchy_an2n_N2NService_startEdge(
     return JNI_TRUE;
 
 ERROR:
+    if (jcls_status) {
+        (*env)->DeleteGlobalRef(env, jcls_status);
+        jcls_status = NULL;
+    }
+    if (jobj_service) {
+        (*env)->DeleteGlobalRef(env, jobj_service);
+        jobj_service = NULL;
+    }
+    jvm = NULL;
+    pthread_mutex_destroy(&status.mutex);
     free(cmd.enc_key);
     free(cmd.enc_key_file);
     cmd.enc_key = NULL;
@@ -69,13 +102,21 @@ JNIEXPORT void JNICALL Java_wang_switchy_an2n_N2NService_stopEdge(
     stop_edge();
     pthread_join(tid, NULL);
     tid = -1;
+    if (jcls_status) {
+        (*env)->DeleteGlobalRef(env, jcls_status);
+        jcls_status = NULL;
+    }
+    if (jobj_service) {
+        (*env)->DeleteGlobalRef(env, jobj_service);
+        jobj_service = NULL;
+    }
+    jvm = NULL;
     pthread_mutex_destroy(&status.mutex);
 }
 
-JNIEXPORT void JNICALL Java_wang_switchy_an2n_N2NService_getEdgeStatus(
+JNIEXPORT jobject JNICALL Java_wang_switchy_an2n_N2NService_getEdgeStatus(
         JNIEnv *env,
-        jobject this,
-        jobject jstatus) {
+        jobject this) {
 
     jboolean is_running = JNI_FALSE;
     if (tid != -1) {
@@ -85,11 +126,13 @@ JNIEXPORT void JNICALL Java_wang_switchy_an2n_N2NService_getEdgeStatus(
     is_running = is_running && status.is_running;
     pthread_mutex_unlock(&status.mutex);
 
-    jclass cls = (*env)->GetObjectClass(env, jstatus);
-    if (!cls) {
-        return;
+    jclass cls = (*env)->FindClass(env, "wang/switchy/an2n/model/EdgeStatus");
+    jobject jStatus = (*env)->NewObject(env, cls, (*env)->GetMethodID(env, cls, "<init>", "()V"));
+    if (!jStatus) {
+        return NULL;
     }
-    (*env)->SetBooleanField(env, jstatus, (*env)->GetFieldID(env, cls, "isRunning", "Z"), is_running);
+    (*env)->SetBooleanField(env, jStatus, (*env)->GetFieldID(env, cls, "isRunning", "Z"), is_running);
+    return jStatus;
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -319,11 +362,68 @@ int GetEdgeCmd(JNIEnv *env, jobject jcmd, n2n_edge_cmd_t* cmd)
 
 void* EdgeRoutine(void* cmd)
 {
+    int flag = 0;
+
+    if (jvm) {
+        JNIEnv* env = NULL;
+        if ((*jvm)->AttachCurrentThread(jvm, &env, NULL) == JNI_OK) {
+            flag = 1;
+        }
+    }
+
     n2n_edge_cmd_t* c = cmd;
     int ret = start_edge(c);
     free(c->enc_key);
     free(c->enc_key_file);
     c->enc_key = NULL;
     c->enc_key_file = NULL;
+
+    if (flag && jvm) {
+        (*jvm)->DetachCurrentThread(jvm);
+    }
+
     return (void*)ret;
+}
+
+void report_edge_status(void)
+{
+    if (!jvm || !jobj_service || !jcls_status) {
+        return;
+    }
+
+    jboolean is_running = JNI_FALSE;
+    pthread_mutex_lock(&status.mutex);
+    is_running = status.is_running;
+    pthread_mutex_unlock(&status.mutex);
+
+    JNIEnv* env = NULL;
+    if ((*jvm)->GetEnv(jvm, &env, JNI_VERSION_1_1) != JNI_OK || !env) {
+        return;
+    }
+
+    jmethodID mid = (*env)->GetMethodID(env, jcls_status, "<init>", "()V");
+    if (!mid) {
+        return;
+    }
+    jobject jStatus = (*env)->NewObject(env, jcls_status, mid);
+    if (!jStatus) {
+        return;
+    }
+    jfieldID fid = (*env)->GetFieldID(env, jcls_status, "isRunning", "Z");
+    if (!fid) {
+        return;
+    }
+    (*env)->SetBooleanField(env, jStatus, fid, is_running);
+
+    jclass cls = (*env)->GetObjectClass(env, jobj_service);
+    if (!cls) {
+        return;
+    }
+    mid = (*env)->GetMethodID(env, cls, "reportEdgeStatus", "(Lwang/switchy/an2n/model/EdgeStatus;)V");
+    if (!mid) {
+        return;
+    }
+    (*env)->CallVoidMethod(env, jobj_service, mid, jStatus);
+
+    (*env)->DeleteLocalRef(env, jStatus);
 }

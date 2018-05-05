@@ -2926,6 +2926,7 @@ int start_edge(const n2n_edge_cmd_t* cmd)
     pthread_mutex_lock(&status.mutex);
     status.is_running = keep_running;
     pthread_mutex_unlock(&status.mutex);
+    report_edge_status();
     if (!cmd) {
         traceEvent( TRACE_ERROR, "Empty cmd struct" );
         return 1;
@@ -3170,6 +3171,7 @@ int start_edge(const n2n_edge_cmd_t* cmd)
     pthread_mutex_lock(&status.mutex);
     status.is_running = keep_running;
     pthread_mutex_unlock(&status.mutex);
+    report_edge_status();
     traceEvent(TRACE_NORMAL, "edge started");
 
     update_supernode_reg(&eee, time(NULL));
@@ -3183,6 +3185,7 @@ int stop_edge(void)
     pthread_mutex_lock(&status.mutex);
     status.is_running = keep_running;
     pthread_mutex_unlock(&status.mutex);
+    report_edge_status();
     return 0;
 }
 #endif /* #ifdef __ANDROID_NDK__ */

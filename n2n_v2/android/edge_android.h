@@ -61,6 +61,7 @@ n2n_edge_status status;
 
 int start_edge(const n2n_edge_cmd_t* cmd);
 int stop_edge(void);
+void report_edge_status(void);
 
 #endif /* __ANDROID_NDK__ */
 
