@@ -121,10 +121,10 @@ JNIEXPORT jobject JNICALL Java_wang_switchy_an2n_N2NService_getEdgeStatus(
     jboolean is_running = JNI_FALSE;
     if (tid != -1) {
         is_running = pthread_kill(tid, 0) ? JNI_FALSE : JNI_TRUE;
+        pthread_mutex_lock(&status.mutex);
+        is_running = is_running && status.is_running;
+        pthread_mutex_unlock(&status.mutex);
     }
-    pthread_mutex_lock(&status.mutex);
-    is_running = is_running && status.is_running;
-    pthread_mutex_unlock(&status.mutex);
 
     jclass cls = (*env)->FindClass(env, "wang/switchy/an2n/model/EdgeStatus");
     jobject jStatus = (*env)->NewObject(env, cls, (*env)->GetMethodID(env, cls, "<init>", "()V"));
@@ -387,7 +387,7 @@ void* EdgeRoutine(void* cmd)
 
 void report_edge_status(void)
 {
-    if (!jvm || !jobj_service || !jcls_status) {
+    if (!jvm || !jobj_service || !jcls_status || tid == -1) {
         return;
     }
 
