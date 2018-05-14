@@ -1521,7 +1521,6 @@ static int handle_PACKET( n2n_edge_t * eee,
 }
 
 
-#ifndef __ANDROID_NDK__
 /** Read a datagram from the management UDP socket and take appropriate
  *  action. */
 static void readFromMgmtSocket( n2n_edge_t * eee, int * keep_running )
@@ -1821,7 +1820,6 @@ static void readFromMgmtSocket( n2n_edge_t * eee, int * keep_running )
     sendto( eee->udp_mgmt_sock, udp_buf, msg_len, 0/*flags*/,
             (struct sockaddr *)&sender_sock, sizeof(struct sockaddr_in) );
 }
-#endif /* #ifndef __ANDROID_NDK__ */
 
 
 /** Read a datagram from the main UDP socket to the internet. */
@@ -2773,11 +2771,8 @@ static int run_loop(n2n_edge_t * eee )
 
         FD_ZERO(&socket_mask);
         FD_SET(eee->udp_sock, &socket_mask);
-        max_sock = eee->udp_sock;
-#ifndef __ANDROID_NDK__
         FD_SET(eee->udp_mgmt_sock, &socket_mask);
         max_sock = max( eee->udp_sock, eee->udp_mgmt_sock );
-#endif /* #ifndef __ANDROID_NDK__ */
 #ifndef WIN32
         FD_SET(eee->device.fd, &socket_mask);
         max_sock = max( max_sock, eee->device.fd );
@@ -2814,14 +2809,12 @@ static int run_loop(n2n_edge_t * eee )
             }
 #endif /* #ifdef __ANDROID_NDK__ */
 
-#ifndef __ANDROID_NDK__
             if(FD_ISSET(eee->udp_mgmt_sock, &socket_mask))
             {
                 /* Read a cooked socket from the internet socket. Writes on the TAP
                  * socket. */
                 readFromMgmtSocket(eee, &keep_running);
             }
-#endif /* #ifndef __ANDROID_NDK__ */
 
 #ifndef WIN32
             if(FD_ISSET(eee->device.fd, &socket_mask))
@@ -3129,6 +3122,16 @@ int start_edge(const n2n_edge_cmd_t* cmd)
             return 1;
         }
     }
+    eee.udp_mgmt_sock = open_socket(N2N_EDGE_MGMT_PORT, 0 /* bind LOOPBACK*/ );
+    if(eee.udp_mgmt_sock < 0)
+    {
+        traceEvent( TRACE_ERROR, "Failed to bind management UDP port %u", (unsigned int)N2N_EDGE_MGMT_PORT );
+        if (!slog) {
+            closeslog(slog);
+            slog = NULL;
+        }
+        return 1;
+    }
 
     /* set host addr, netmask, mac addr for UIP and init arp*/
     {
@@ -3181,6 +3184,12 @@ int start_edge(const n2n_edge_cmd_t* cmd)
 
 int stop_edge(void)
 {
+    struct sockaddr_in peer_addr;
+    peer_addr.sin_family = PF_INET;
+    peer_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    peer_addr.sin_port = htons(N2N_EDGE_MGMT_PORT);
+    sendto(eee.udp_mgmt_sock, "", 1, 0, (struct sockaddr *)&peer_addr, sizeof(struct sockaddr_in));
+
     keep_running = 0;
     pthread_mutex_lock(&status.mutex);
     status.is_running = keep_running;
