@@ -14,7 +14,7 @@ static JavaVM* jvm = NULL;
 static jobject jobj_service = NULL;
 static jclass jcls_status = NULL;
 
-JNIEXPORT jboolean JNICALL Java_wang_switchy_an2n_N2NService_startEdge(
+JNIEXPORT jboolean JNICALL Java_wang_switchy_an2n_service_N2NService_startEdge(
         JNIEnv *env,
         jobject this,
         jobject jcmd) {
@@ -92,7 +92,7 @@ ERROR:
     return JNI_FALSE;
 }
 
-JNIEXPORT void JNICALL Java_wang_switchy_an2n_N2NService_stopEdge(
+JNIEXPORT void JNICALL Java_wang_switchy_an2n_service_N2NService_stopEdge(
         JNIEnv *env,
         jobject this) {
 
@@ -114,7 +114,7 @@ JNIEXPORT void JNICALL Java_wang_switchy_an2n_N2NService_stopEdge(
     pthread_mutex_destroy(&status.mutex);
 }
 
-JNIEXPORT jobject JNICALL Java_wang_switchy_an2n_N2NService_getEdgeStatus(
+JNIEXPORT jobject JNICALL Java_wang_switchy_an2n_service_N2NService_getEdgeStatus(
         JNIEnv *env,
         jobject this) {
 
