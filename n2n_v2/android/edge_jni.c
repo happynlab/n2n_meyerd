@@ -14,7 +14,7 @@ static JavaVM* jvm = NULL;
 static jobject jobj_service = NULL;
 static jclass jcls_status = NULL;
 
-JNIEXPORT jboolean JNICALL Java_wang_switchy_an2n_service_N2NService_startEdge(
+JNIEXPORT jboolean JNICALL Java_wang_switchy_hin2n_service_N2NService_startEdge(
         JNIEnv *env,
         jobject this,
         jobject jcmd) {
@@ -59,7 +59,7 @@ JNIEXPORT jboolean JNICALL Java_wang_switchy_an2n_service_N2NService_startEdge(
         goto ERROR;
     }
     jobj_service = (*env)->NewGlobalRef(env, this);
-    jclass cls = (*env)->FindClass(env, "wang/switchy/an2n/model/EdgeStatus");
+    jclass cls = (*env)->FindClass(env, "wang/switchy/hin2n/model/EdgeStatus");
     if (!cls) {
         goto ERROR;
     }
@@ -92,7 +92,7 @@ ERROR:
     return JNI_FALSE;
 }
 
-JNIEXPORT void JNICALL Java_wang_switchy_an2n_service_N2NService_stopEdge(
+JNIEXPORT void JNICALL Java_wang_switchy_hin2n_service_N2NService_stopEdge(
         JNIEnv *env,
         jobject this) {
 
@@ -114,7 +114,7 @@ JNIEXPORT void JNICALL Java_wang_switchy_an2n_service_N2NService_stopEdge(
     pthread_mutex_destroy(&status.mutex);
 }
 
-JNIEXPORT jobject JNICALL Java_wang_switchy_an2n_service_N2NService_getEdgeStatus(
+JNIEXPORT jobject JNICALL Java_wang_switchy_hin2n_service_N2NService_getEdgeStatus(
         JNIEnv *env,
         jobject this) {
 
@@ -126,7 +126,7 @@ JNIEXPORT jobject JNICALL Java_wang_switchy_an2n_service_N2NService_getEdgeStatu
         pthread_mutex_unlock(&status.mutex);
     }
 
-    jclass cls = (*env)->FindClass(env, "wang/switchy/an2n/model/EdgeStatus");
+    jclass cls = (*env)->FindClass(env, "wang/switchy/hin2n/model/EdgeStatus");
     jobject jStatus = (*env)->NewObject(env, cls, (*env)->GetMethodID(env, cls, "<init>", "()V"));
     if (!jStatus) {
         return NULL;
@@ -419,7 +419,7 @@ void report_edge_status(void)
     if (!cls) {
         return;
     }
-    mid = (*env)->GetMethodID(env, cls, "reportEdgeStatus", "(Lwang/switchy/an2n/model/EdgeStatus;)V");
+    mid = (*env)->GetMethodID(env, cls, "reportEdgeStatus", "(Lwang/switchy/hin2n/model/EdgeStatus;)V");
     if (!mid) {
         return;
     }
