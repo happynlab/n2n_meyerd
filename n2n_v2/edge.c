@@ -62,6 +62,8 @@ struct SCM_def sd = {
 #define IFACE_UPDATE_INTERVAL           (30) /* sec. How long it usually takes to get an IP lease. */
 #define TRANSOP_TICK_INTERVAL           (10) /* sec */
 
+#define LOCALIP_UPDATE_INTERVAL         (30) /* sec. How long it usually takes to re-resolve local socket. */
+
 #define STAT_CALC_INTERVAL				(10) /* sec. Calculate the bps values in roughly this interval steps */
 
 /** maximum length of command line arguments */
@@ -2749,6 +2751,7 @@ static int run_loop(n2n_edge_t * eee )
     time_t lastTransop=0;
 	time_t lastStatCalc=0;
 	time_t lastStatCalcDiff;
+    time_t lastLocalIPReResolve=0;
 
 
 #ifdef WIN32
@@ -2850,6 +2853,12 @@ static int run_loop(n2n_edge_t * eee )
             traceEvent(TRACE_NORMAL, "Re-checking dynamic IP address.");
             tuntap_get_address( &(eee->device) );
             lastIfaceCheck = nowTime;
+        }
+
+        if (eee->local_ip_str[0] != 0 && nowTime - lastLocalIPReResolve > LOCALIP_UPDATE_INTERVAL && strncmp(eee->local_ip_str, "auto", sizeof("auto")) == 0) {
+            traceEvent(TRACE_NORMAL, "Re-resove local socket.");
+            set_localip(eee);
+            lastLocalIPReResolve = nowTime;
         }
 
 		lastStatCalcDiff = nowTime - lastStatCalc;
