@@ -37,10 +37,20 @@ typedef struct n2n_edge_cmd_st
     int vpn_fd;
 } n2n_edge_cmd_t;
 
+enum
+{
+    EDGE_STAT_CONNECTING,
+    EDGE_STAT_CONNECTED,
+    EDGE_STAT_SUPERNODE_DISCONNECT,
+    EDGE_STAT_DISCONNECT,
+    EDGE_STAT_FAILED
+};
+
 typedef struct n2n_edge_status_st
 {
     pthread_mutex_t mutex;
-    uint8_t is_running;
+    uint8_t running_status;
+
 } n2n_edge_status;
 
 #define INIT_EDGE_CMD(cmd)      do {\

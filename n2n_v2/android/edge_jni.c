@@ -13,6 +13,7 @@ static pthread_t tid = -1;
 static JavaVM* jvm = NULL;
 static jobject jobj_service = NULL;
 static jclass jcls_status = NULL;
+static jclass jcls_rs = NULL;
 
 JNIEXPORT jboolean JNICALL Java_wang_switchy_hin2n_service_N2NService_startEdge(
         JNIEnv *env,
@@ -43,6 +44,10 @@ JNIEXPORT jboolean JNICALL Java_wang_switchy_hin2n_service_N2NService_startEdge(
         pthread_kill(tid, SIGINT);
         pthread_join(tid, NULL);
         tid = -1;
+        if (jcls_rs) {
+            (*env)->DeleteGlobalRef(env, jcls_rs);
+            jcls_rs = NULL;
+        }
         if (jcls_status) {
             (*env)->DeleteGlobalRef(env, jcls_status);
             jcls_status = NULL;
@@ -64,6 +69,11 @@ JNIEXPORT jboolean JNICALL Java_wang_switchy_hin2n_service_N2NService_startEdge(
         goto ERROR;
     }
     jcls_status = (*env)->NewGlobalRef(env, cls);
+    jclass cls_rs = (*env)->FindClass(env, "wang/switchy/hin2n/model/EdgeStatus$RunningStatus");
+    if (!cls_rs) {
+        goto ERROR;
+    }
+    jcls_rs = (*env)->NewGlobalRef(env, cls_rs);
 
     pthread_mutex_init(&status.mutex, NULL);
     int ret = pthread_create(&tid, NULL, EdgeRoutine, &cmd);
@@ -75,6 +85,10 @@ JNIEXPORT jboolean JNICALL Java_wang_switchy_hin2n_service_N2NService_startEdge(
     return JNI_TRUE;
 
 ERROR:
+    if (jcls_rs) {
+        (*env)->DeleteGlobalRef(env, jcls_rs);
+        jcls_rs = NULL;
+    }
     if (jcls_status) {
         (*env)->DeleteGlobalRef(env, jcls_status);
         jcls_status = NULL;
@@ -102,6 +116,10 @@ JNIEXPORT void JNICALL Java_wang_switchy_hin2n_service_N2NService_stopEdge(
     stop_edge();
     pthread_join(tid, NULL);
     tid = -1;
+    if (jcls_rs) {
+        (*env)->DeleteGlobalRef(env, jcls_rs);
+        jcls_rs = NULL;
+    }
     if (jcls_status) {
         (*env)->DeleteGlobalRef(env, jcls_status);
         jcls_status = NULL;
@@ -117,13 +135,31 @@ JNIEXPORT void JNICALL Java_wang_switchy_hin2n_service_N2NService_stopEdge(
 JNIEXPORT jobject JNICALL Java_wang_switchy_hin2n_service_N2NService_getEdgeStatus(
         JNIEnv *env,
         jobject this) {
-
-    jboolean is_running = JNI_FALSE;
+    const char* running_status = "DISCONNECT";
     if (tid != -1) {
-        is_running = pthread_kill(tid, 0) ? JNI_FALSE : JNI_TRUE;
-        pthread_mutex_lock(&status.mutex);
-        is_running = is_running && status.is_running;
-        pthread_mutex_unlock(&status.mutex);
+        if (!pthread_kill(tid, 0)) {
+            pthread_mutex_lock(&status.mutex);
+            switch (status.running_status) {
+                case EDGE_STAT_CONNECTING:
+                    running_status = "CONNECTING";
+                    break;
+                case EDGE_STAT_CONNECTED:
+                    running_status = "CONNECTED";
+                    break;
+                case EDGE_STAT_SUPERNODE_DISCONNECT:
+                    running_status = "SUPERNODE_DISCONNECT";
+                    break;
+                case EDGE_STAT_DISCONNECT:
+                    running_status = "DISCONNECT";
+                    break;
+                case EDGE_STAT_FAILED:
+                    running_status = "FAILED";
+                    break;
+                default:
+                    running_status = "DISCONNECT";
+            }
+            pthread_mutex_unlock(&status.mutex);
+        }
     }
 
     jclass cls = (*env)->FindClass(env, "wang/switchy/hin2n/model/EdgeStatus");
@@ -131,7 +167,9 @@ JNIEXPORT jobject JNICALL Java_wang_switchy_hin2n_service_N2NService_getEdgeStat
     if (!jStatus) {
         return NULL;
     }
-    (*env)->SetBooleanField(env, jStatus, (*env)->GetFieldID(env, cls, "isRunning", "Z"), is_running);
+    jclass cls_rs = (*env)->FindClass(env, "wang/switchy/hin2n/model/EdgeStatus$RunningStatus");
+    jobject jRunningStatus = (*env)->GetStaticObjectField(env, cls_rs, (*env)->GetStaticFieldID(env, cls_rs, running_status, "Lwang/switchy/hin2n/model/EdgeStatus$RunningStatus;"));
+    (*env)->SetObjectField(env, jStatus, (*env)->GetFieldID(env, cls, "runningStatus", "Lwang/switchy/hin2n/model/EdgeStatus$RunningStatus;"), jRunningStatus);
     return jStatus;
 }
 
@@ -378,6 +416,13 @@ void* EdgeRoutine(void* cmd)
     c->enc_key = NULL;
     c->enc_key_file = NULL;
 
+    if (ret) {
+        pthread_mutex_lock(&status.mutex);
+        status.running_status = EDGE_STAT_FAILED;
+        pthread_mutex_unlock(&status.mutex);
+        report_edge_status();
+    }
+
     if (flag && jvm) {
         (*jvm)->DetachCurrentThread(jvm);
     }
@@ -387,13 +432,31 @@ void* EdgeRoutine(void* cmd)
 
 void report_edge_status(void)
 {
-    if (!jvm || !jobj_service || !jcls_status || tid == -1) {
+    if (!jvm || !jobj_service || !jcls_status || !jcls_rs || tid == -1) {
         return;
     }
 
-    jboolean is_running = JNI_FALSE;
+    const char* running_status = "DISCONNECT";
     pthread_mutex_lock(&status.mutex);
-    is_running = status.is_running;
+    switch (status.running_status) {
+        case EDGE_STAT_CONNECTING:
+            running_status = "CONNECTING";
+            break;
+        case EDGE_STAT_CONNECTED:
+            running_status = "CONNECTED";
+            break;
+        case EDGE_STAT_SUPERNODE_DISCONNECT:
+            running_status = "SUPERNODE_DISCONNECT";
+            break;
+        case EDGE_STAT_DISCONNECT:
+            running_status = "DISCONNECT";
+            break;
+        case EDGE_STAT_FAILED:
+            running_status = "FAILED";
+            break;
+        default:
+            running_status = "DISCONNECT";
+    }
     pthread_mutex_unlock(&status.mutex);
 
     JNIEnv* env = NULL;
@@ -409,21 +472,41 @@ void report_edge_status(void)
     if (!jStatus) {
         return;
     }
-    jfieldID fid = (*env)->GetFieldID(env, jcls_status, "isRunning", "Z");
+
+    jfieldID fid = (*env)->GetStaticFieldID(env, jcls_rs, running_status, "Lwang/switchy/hin2n/model/EdgeStatus$RunningStatus;");
     if (!fid) {
+        (*env)->DeleteLocalRef(env, jStatus);
         return;
     }
-    (*env)->SetBooleanField(env, jStatus, fid, is_running);
+    jobject jRunningStatus = (*env)->GetStaticObjectField(env, jcls_rs, fid);
+    if (!jRunningStatus) {
+        (*env)->DeleteLocalRef(env, jRunningStatus);
+        (*env)->DeleteLocalRef(env, jStatus);
+        return;
+    }
+    fid = (*env)->GetFieldID(env, jcls_status, "runningStatus", "Lwang/switchy/hin2n/model/EdgeStatus$RunningStatus;");
+    if (!fid) {
+        (*env)->DeleteLocalRef(env, jRunningStatus);
+        (*env)->DeleteLocalRef(env, jStatus);
+        return;
+    }
+    (*env)->SetObjectField(env, jStatus, fid, jRunningStatus);
+
 
     jclass cls = (*env)->GetObjectClass(env, jobj_service);
     if (!cls) {
+        (*env)->DeleteLocalRef(env, jRunningStatus);
+        (*env)->DeleteLocalRef(env, jStatus);
         return;
     }
     mid = (*env)->GetMethodID(env, cls, "reportEdgeStatus", "(Lwang/switchy/hin2n/model/EdgeStatus;)V");
     if (!mid) {
+        (*env)->DeleteLocalRef(env, jRunningStatus);
+        (*env)->DeleteLocalRef(env, jStatus);
         return;
     }
     (*env)->CallVoidMethod(env, jobj_service, mid, jStatus);
 
+    (*env)->DeleteLocalRef(env, jRunningStatus);
     (*env)->DeleteLocalRef(env, jStatus);
 }

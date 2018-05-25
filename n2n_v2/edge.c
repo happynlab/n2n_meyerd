@@ -1092,6 +1092,17 @@ static void update_supernode_reg( n2n_edge_t * eee, time_t nowTime )
         traceEvent(TRACE_WARNING, "Supernode not responding - moving to %u of %u", 
                    (unsigned int)eee->sn_idx, (unsigned int)eee->sn_num );
 
+#ifdef __ANDROID_NDK__
+        int change = 0;
+        pthread_mutex_lock(&status.mutex);
+        change = status.running_status == EDGE_STAT_SUPERNODE_DISCONNECT ? 0 : 1;
+        status.running_status = EDGE_STAT_SUPERNODE_DISCONNECT;
+        pthread_mutex_unlock(&status.mutex);
+        if (change) {
+            report_edge_status();
+        }
+#endif /* #ifdef __ANDROID_NDK__ */
+
         eee->sup_attempts = N2N_EDGE_SUP_ATTEMPTS;
     }
     else
@@ -2010,6 +2021,17 @@ static void readFromIPSocket( n2n_edge_t * eee )
                     eee->sn_wait=0;
                     eee->sup_attempts = N2N_EDGE_SUP_ATTEMPTS; /* refresh because we got a response */
 
+#ifdef __ANDROID_NDK__
+                    int change = 0;
+                    pthread_mutex_lock(&status.mutex);
+                    change = status.running_status == EDGE_STAT_CONNECTED ? 0 : 1;
+                    status.running_status = EDGE_STAT_CONNECTED;
+                    pthread_mutex_unlock(&status.mutex);
+                    if (change) {
+                        report_edge_status();
+                    }
+#endif /* #ifdef __ANDROID_NDK__ */
+
                     /* REVISIT: store sn_back */
                     /* don't adjust lifetime according to supernode - this value should be specified
                      * by the client (because dependent on NAT/firewall) (lukas) 
@@ -2926,7 +2948,7 @@ int start_edge(const n2n_edge_cmd_t* cmd)
 
     keep_running = 0;
     pthread_mutex_lock(&status.mutex);
-    status.is_running = keep_running;
+    status.running_status = EDGE_STAT_CONNECTING;
     pthread_mutex_unlock(&status.mutex);
     report_edge_status();
     if (!cmd) {
@@ -3181,7 +3203,7 @@ int start_edge(const n2n_edge_cmd_t* cmd)
 
     keep_running = 1;
     pthread_mutex_lock(&status.mutex);
-    status.is_running = keep_running;
+    status.running_status = EDGE_STAT_CONNECTED;
     pthread_mutex_unlock(&status.mutex);
     report_edge_status();
     traceEvent(TRACE_NORMAL, "edge started");
@@ -3193,15 +3215,16 @@ int start_edge(const n2n_edge_cmd_t* cmd)
 
 int stop_edge(void)
 {
+    keep_running = 0;
+
     struct sockaddr_in peer_addr;
     peer_addr.sin_family = PF_INET;
     peer_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     peer_addr.sin_port = htons(N2N_EDGE_MGMT_PORT);
     sendto(eee.udp_mgmt_sock, "", 1, 0, (struct sockaddr *)&peer_addr, sizeof(struct sockaddr_in));
 
-    keep_running = 0;
     pthread_mutex_lock(&status.mutex);
-    status.is_running = keep_running;
+    status.running_status = EDGE_STAT_DISCONNECT;
     pthread_mutex_unlock(&status.mutex);
     report_edge_status();
     return 0;
