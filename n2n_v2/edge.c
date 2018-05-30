@@ -44,7 +44,7 @@ struct SCM_def sd = {
 #endif /* __ANDROID_NDK__ */
 
 #ifdef __ANDROID_NDK__
-#include "android/edge_android.h"
+#include <edge_jni/edge_jni.h>
 #include <tun2tap/tun2tap.h>
 #endif /* __ANDROID_NDK__ */
 
@@ -2935,7 +2935,7 @@ int main(int argc, char **argv)
         return 0;
 }
 #else /* #ifdef __ANDROID_NDK__ */
-int start_edge(const n2n_edge_cmd_t* cmd)
+int start_edge_v2s(const n2n_edge_cmd_t* cmd)
 {
     int     local_port = 0 /* any port */;
     char    tuntap_dev_name[N2N_IFNAMSIZ] = "tun0";
@@ -3213,7 +3213,7 @@ int start_edge(const n2n_edge_cmd_t* cmd)
     return run_loop(&eee);
 }
 
-int stop_edge(void)
+int stop_edge_v2s(void)
 {
     keep_running = 0;
 
