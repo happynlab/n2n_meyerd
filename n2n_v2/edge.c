@@ -3221,7 +3221,7 @@ int stop_edge_v2s(void)
     peer_addr.sin_family = PF_INET;
     peer_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     peer_addr.sin_port = htons(N2N_EDGE_MGMT_PORT);
-    sendto(eee.udp_mgmt_sock, "", 1, 0, (struct sockaddr *)&peer_addr, sizeof(struct sockaddr_in));
+    sendto(eee.udp_mgmt_sock, "stop", 4, 0, (struct sockaddr *)&peer_addr, sizeof(struct sockaddr_in));
 
     pthread_mutex_lock(&status.mutex);
     status.running_status = EDGE_STAT_DISCONNECT;
