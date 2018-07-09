@@ -27,8 +27,17 @@
 #include <assert.h>
 #include <sys/stat.h>
 
+#ifdef __ANDROID_NDK__
+#include <edge_jni/edge_jni.h>
+#include <tun2tap/tun2tap.h>
+#endif /* __ANDROID_NDK__ */
+
 /** Time between logging system STATUS messages */
 #define STATUS_UPDATE_INTERVAL (30 * 60) /*secs*/
+
+#ifdef __ANDROID_NDK__
+#define ARP_PERIOD_INTERVAL             (10) /* sec */
+#endif /* __ANDROID_NDK__ */
 
 /* maximum length of command line arguments */
 #define MAX_CMDLINE_BUFFER_LENGTH    4096
@@ -36,6 +45,10 @@
 #define MAX_CONFFILE_LINE_LENGTH     1024
 
 #define N2N_EDGE_SN_HOST_SIZE 48
+
+#ifdef __ANDROID_NDK__
+#define N2N_EDGE_MGMT_PORT              5644
+#endif /* __ANDROID_NDK__ */
 
 struct n2n_edge
 {
@@ -59,6 +72,9 @@ struct n2n_edge
   struct peer_info *  known_peers /* = NULL*/;
   struct peer_info *  pending_peers /* = NULL*/;
   time_t              last_register /* = 0*/;
+#ifdef __ANDROID_NDK__
+  int                 sn_wait /* = 0*/;
+#endif /* #ifdef __ANDROID_NDK__ */
 };
 
 static void supernode2addr(n2n_edge_t * eee, char* addr);
@@ -209,6 +225,9 @@ static int edge_init(n2n_edge_t * eee) {
   eee->known_peers   = NULL;
   eee->pending_peers = NULL;
   eee->last_register = 0;
+#ifdef __ANDROID_NDK__
+  eee->sn_wait       = 0;
+#endif /* #ifdef __ANDROID_NDK__ */
 
   if(lzo_init() != LZO_E_OK) {
     traceEvent(TRACE_ERROR, "LZO compression error");
@@ -679,6 +698,20 @@ static void update_registrations( n2n_edge_t * eee ) {
   /* REVISIT: turn-on gratuitous ARP with config option. */
   /* send_grat_arps(sock_fd, is_udp_sock); */
 
+#ifdef __ANDROID_NDK__
+    if (eee->sn_wait) {
+        int change = 0;
+        pthread_mutex_lock(&g_status->mutex);
+        change = g_status->running_status == EDGE_STAT_SUPERNODE_DISCONNECT ? 0 : 1;
+        g_status->running_status = EDGE_STAT_SUPERNODE_DISCONNECT;
+        pthread_mutex_unlock(&g_status->mutex);
+        if (change) {
+            g_status->report_edge_status();
+        }
+    }
+    eee->sn_wait = 1;
+#endif /* #ifdef __ANDROID_NDK__ */
+
   eee->last_register = time(NULL);
 }
 
@@ -915,7 +948,19 @@ static void readFromTAPSocket( n2n_edge_t * eee )
   u_char decrypted_msg[2048];
   size_t len;
 
+#ifdef __ANDROID_NDK__
+    if (uip_arp_len != 0) {
+        len = uip_arp_len;
+        memcpy(decrypted_msg, uip_arp_buf, MIN(uip_arp_len, sizeof(decrypted_msg)));
+        traceEvent(TRACE_NORMAL, "ARP reply packet to send");
+    }
+    else
+    {
+#endif /* #ifdef __ANDROID_NDK__ */
   len = tuntap_read(&(eee->device), decrypted_msg, sizeof(decrypted_msg));
+#ifdef __ANDROID_NDK__
+    }
+#endif /* #ifdef __ANDROID_NDK__ */
 
   if((len <= 0) || (len > sizeof(decrypted_msg)))
     traceEvent(TRACE_WARNING, "read()=%d [%d/%s]\n",
@@ -1046,6 +1091,17 @@ void readFromIPSocket( n2n_edge_t * eee )
 	      if ( hdr->sent_by_supernode )
                 {
 		  /* Response to supernode registration. Supernode is not in the pending_peers list. */
+#ifdef __ANDROID_NDK__
+              eee->sn_wait = 0;
+              int change = 0;
+              pthread_mutex_lock(&g_status->mutex);
+              change = g_status->running_status == EDGE_STAT_CONNECTED ? 0 : 1;
+              g_status->running_status = EDGE_STAT_CONNECTED;
+              pthread_mutex_unlock(&g_status->mutex);
+              if (change) {
+                  g_status->report_edge_status();
+              }
+#endif /* #ifdef __ANDROID_NDK__ */
                 }
 	      else
                 {
@@ -1151,10 +1207,13 @@ static void supernode2addr(n2n_edge_t * eee, char* addr) {
 /* ***************************************************** */
 
 extern int useSyslog;
+#ifdef __ANDROID_NDK__
+static int keep_running = 1;
+#endif /* #ifdef __ANDROID_NDK__ */
 
 #define N2N_NETMASK_STR_SIZE 16 /* dotted decimal 12 numbers + 3 dots */
 
-
+#ifndef __ANDROID_NDK__
 int main(int argc, char* argv[]) {
   int opt=0;
   u_int16_t local_port = 0 /* any port */;
@@ -1370,6 +1429,249 @@ effectiveargv[effectiveargc] = 0;
       daemon( 0, 0 );
     }
 #endif
+#else /* #ifdef __ANDROID_NDK__ */
+int start_edge_v1(n2n_edge_status_t* status) {
+    u_int16_t local_port = 0 /* any port */;
+    char *tuntap_dev_name = "tun0";
+    char ip_addr[N2N_NETMASK_STR_SIZE]="";
+    char netmask[N2N_NETMASK_STR_SIZE]="255.255.255.0";
+    char device_mac[18]="";
+    char *encrypt_key=NULL;
+    int mgmt_sock = -1;
+
+    size_t numPurged;
+    time_t lastStatus=0;
+
+    n2n_edge_t eee; /* single instance for this program */
+
+    if (!status)
+    {
+        traceEvent( TRACE_ERROR, "Empty cmd struct" );
+        return 1;
+    }
+    g_status = status;
+    n2n_edge_cmd_t* cmd = &status->cmd;
+
+    keep_running = 0;
+    pthread_mutex_lock(&g_status->mutex);
+    g_status->running_status = EDGE_STAT_CONNECTING;
+    pthread_mutex_unlock(&g_status->mutex);
+    g_status->report_edge_status();
+
+    traceLevel = cmd->trace_vlevel;
+    traceLevel = traceLevel < 0 ? 0 : traceLevel;   /* TRACE_ERROR */
+    traceLevel = traceLevel > 3 ? 3 : traceLevel;   /* TRACE_INFO */
+    if (!slog)
+    {
+        closeslog(slog);
+        slog = NULL;
+    }
+    slog = initslog(android_log_level(traceLevel), N2N_LOG_FILEPATH);
+
+    if (-1 == edge_init(&eee) )
+    {
+        traceEvent( TRACE_ERROR, "Failed in edge_init" );
+        if (!slog) {
+            closeslog(slog);
+            slog = NULL;
+        }
+        return 1;
+    }
+    memset(&(eee.supernode), 0, sizeof(eee.supernode));
+    eee.supernode.family = AF_INET;
+
+    if (cmd->vpn_fd < 0) {
+        traceEvent(TRACE_ERROR, "VPN socket is invalid.");
+        if (!slog) {
+            closeslog(slog);
+            slog = NULL;
+        }
+        return 1;
+    }
+    eee.device.fd = cmd->vpn_fd;
+    if (cmd->enc_key)
+    {
+        encrypt_key = strdup(cmd->enc_key);
+        traceEvent(TRACE_NORMAL, "encrypt_key = '%s'\n", encrypt_key);
+    }
+    if (cmd->ip_addr[0] != '\0')
+    {
+        strncpy(ip_addr, cmd->ip_addr, N2N_NETMASK_STR_SIZE);
+        ip_addr[N2N_NETMASK_STR_SIZE - 1] = '\0';
+    }
+    else
+    {
+        traceEvent(TRACE_ERROR, "Ip address is not set.");
+        free(encrypt_key);
+        if (!slog) {
+            closeslog(slog);
+            slog = NULL;
+        }
+        return 1;
+    }
+    if (cmd->community[0] != '\0')
+    {
+        eee.community_name = cmd->community;
+    }
+    else
+    {
+        traceEvent(TRACE_ERROR, "Community is not set.");
+        free(encrypt_key);
+        if (!slog) {
+            closeslog(slog);
+            slog = NULL;
+        }
+        return 1;
+    }
+    if (cmd->mac_addr[0] != '\0')
+    {
+        strncpy(device_mac, cmd->mac_addr, sizeof(device_mac));
+        device_mac[sizeof(device_mac) - 1] = '\0';
+    }
+    else
+    {
+        strncpy(device_mac, random_device_mac(), sizeof(device_mac));
+        traceEvent(TRACE_NORMAL, "random device mac: %s\n", device_mac);
+    }
+    eee.allow_routing = cmd->allow_routing == 0 ? 0 : 1;
+    if (cmd->supernodes[0][0] != '\0')
+    {
+        strncpy(eee.supernode_ip, cmd->supernodes[0], N2N_EDGE_SN_HOST_SIZE);
+        eee.supernode_ip[N2N_EDGE_SN_HOST_SIZE - 1] = '\0';
+    }
+    else
+    {
+        traceEvent(TRACE_ERROR, "Supernode is not set.");
+        free(encrypt_key);
+        if (!slog) {
+            closeslog(slog);
+            slog = NULL;
+        }
+        return 1;
+    }
+    eee.re_resolve_supernode_ip = cmd->re_resolve_supernode_ip == 0 ? 0 : 1;
+    if (cmd->ip_netmask[0] != '\0')
+    {
+        strncpy(netmask, cmd->ip_netmask, N2N_NETMASK_STR_SIZE);
+    }
+    local_port = cmd->local_port;
+    eee.sinfo.is_udp_socket = cmd->http_tunnel == 0 ? 1 : 0;
+
+    supernode2addr(&eee, eee.supernode_ip);
+    if (!eee.supernode.addr_type.v4_addr)
+    {
+        traceEvent(TRACE_ERROR, "Supernode is not resolved.");
+        free(encrypt_key);
+        if (!slog) {
+            closeslog(slog);
+            slog = NULL;
+        }
+        return 1;
+    }
+    if(tuntap_open(&(eee.device), tuntap_dev_name, ip_addr, netmask, device_mac, cmd->mtu) < 0)
+    {
+        traceEvent(TRACE_ERROR, "Failed in tuntap_open");
+        free(encrypt_key);
+        if (!slog) {
+            closeslog(slog);
+            slog = NULL;
+        }
+        return 1;
+    }
+    if(local_port > 0)
+    {
+        traceEvent(TRACE_NORMAL, "Binding to local port %hu", local_port);
+    }
+
+    if(edge_init_twofish( &eee, (u_int8_t *)(encrypt_key), encrypt_key ? strlen(encrypt_key) : 0 ) < 0)
+    {
+        traceEvent(TRACE_ERROR, "twofish init failed.");
+        free(encrypt_key);
+        if (!slog) {
+            closeslog(slog);
+            slog = NULL;
+        }
+        return 1;
+    }
+    free(encrypt_key);
+    eee.sinfo.sock = open_socket(local_port, eee.sinfo.is_udp_socket, 0);
+    if(eee.sinfo.sock < 0)
+    {
+        traceEvent(TRACE_ERROR, "Failed to bind main socket port %u", (signed int)local_port);
+        if (!slog) {
+            closeslog(slog);
+            slog = NULL;
+        }
+        return 1;
+    }
+    if(!eee.sinfo.is_udp_socket)
+    {
+        int rc = connect_socket(eee.sinfo.sock, &(eee.supernode));
+        if(rc == -1) {
+            traceEvent(TRACE_WARNING, "Error while connecting to supernode\n");
+            if (!slog) {
+                closeslog(slog);
+                slog = NULL;
+            }
+            return 1;
+        }
+    }
+    mgmt_sock = open_socket(N2N_EDGE_MGMT_PORT, 1, 0);
+    if (mgmt_sock < 0)
+    {
+        traceEvent(TRACE_ERROR, "Failed to bind management socket port %u", (signed int)N2N_EDGE_MGMT_PORT);
+        if (!slog) {
+            closeslog(slog);
+            slog = NULL;
+        }
+        return 1;
+    }
+
+    /* set host addr, netmask, mac addr for UIP and init arp*/
+    {
+        int match, i;
+        u8_t ip[4];
+        uip_ipaddr_t ipaddr;
+        struct uip_eth_addr eaddr;
+
+        match = sscanf(ip_addr, "%d.%d.%d.%d", ip, ip + 1, ip + 2, ip + 3);
+        if (match != 4) {
+            traceEvent(TRACE_ERROR, "scan ip failed, ip: %s", ip_addr);
+            if (!slog) {
+                closeslog(slog);
+                slog = NULL;
+            }
+            return 1;
+        }
+        uip_ipaddr(ipaddr, ip[0], ip[1], ip[2], ip[3]);
+        uip_sethostaddr(ipaddr);
+        match = sscanf(netmask, "%d.%d.%d.%d", ip, ip + 1, ip + 2, ip + 3);
+        if (match != 4) {
+            traceEvent(TRACE_ERROR, "scan netmask error, ip: %s", netmask);
+            if (!slog) {
+                closeslog(slog);
+                slog = NULL;
+            }
+            return 1;
+        }
+        uip_ipaddr(ipaddr, ip[0], ip[1], ip[2], ip[3]);
+        uip_setnetmask(ipaddr);
+        for (i = 0; i < 6; ++i) {
+            eaddr.addr[i] = eee.device.mac_addr[i];
+        }
+        uip_setethaddr(eaddr);
+
+        uip_arp_init();
+    }
+
+    keep_running = 1;
+    pthread_mutex_lock(&g_status->mutex);
+    g_status->running_status = EDGE_STAT_CONNECTED;
+    pthread_mutex_unlock(&g_status->mutex);
+    g_status->report_edge_status();
+    traceEvent(TRACE_NORMAL, "edge started");
+
+#endif /* #ifdef __ANDROID_NDK__ */
 
   update_registrations(&eee);
 
@@ -1387,7 +1689,17 @@ effectiveargv[effectiveargc] = 0;
    * readFromIPSocket() or readFromTAPSocket()
    */
 
-  while(1) {
+#ifdef __ANDROID_NDK__
+    time_t lastArpPeriod=0;
+#endif
+
+#ifdef __ANDROID_NDK__
+    keep_running = 1;
+    while(keep_running) {
+#else
+    while (1) {
+#endif /* #ifdef __ANDROID_NDK__ */
+
     int rc, max_sock = 0;
     fd_set socket_mask;
     struct timeval wait_time;
@@ -1399,6 +1711,10 @@ effectiveargv[effectiveargc] = 0;
     FD_SET(eee.device.fd, &socket_mask);
     max_sock = max( eee.sinfo.sock, eee.device.fd );
 #endif
+#ifdef __ANDROID_NDK__
+    FD_SET(mgmt_sock, &socket_mask);
+    max_sock = max(max_sock, mgmt_sock);
+#endif /* #ifdef __ANDROID_NDK__ */
 
     wait_time.tv_sec = SOCKET_TIMEOUT_INTERVAL_SECS; wait_time.tv_usec = 0;
 
@@ -1416,6 +1732,13 @@ effectiveargv[effectiveargc] = 0;
             readFromIPSocket(&eee);
 	  }
 
+#ifdef __ANDROID_NDK__
+        if (uip_arp_len != 0) {
+            readFromTAPSocket(&eee);
+            uip_arp_len = 0;
+        }
+#endif /* #ifdef __ANDROID_NDK__ */
+
 #ifndef WIN32
         if(FD_ISSET(eee.device.fd, &socket_mask))
 	  {
@@ -1424,6 +1747,14 @@ effectiveargv[effectiveargc] = 0;
             readFromTAPSocket(&eee);
 	  }
 #endif
+
+#ifdef __ANDROID_NDK__
+        if (FD_ISSET(mgmt_sock, &socket_mask))
+        {
+            keep_running = 0;
+        }
+#endif /* #ifdef __ANDROID_NDK__ */
+
       }
 
     update_registrations(&eee);
@@ -1443,16 +1774,59 @@ effectiveargv[effectiveargc] = 0;
         traceEvent( TRACE_NORMAL, "STATUS: pending=%ld, operational=%ld",
                     peer_list_size( eee.pending_peers ), peer_list_size( eee.known_peers ) );
       }
+
+#ifdef __ANDROID_NDK__
+      if ((nowTime - lastArpPeriod) > ARP_PERIOD_INTERVAL) {
+          uip_arp_timer();
+          lastArpPeriod = nowTime;
+      }
+#endif /* #ifdef __ANDROID_NDK__ */
   } /* while */
 
   send_deregister( &eee, &(eee.supernode));
 
   closesocket(eee.sinfo.sock);
+#ifdef __ANDROID_NDK__
+    closesocket(mgmt_sock);
+#endif /* #ifdef __ANDROID_NDK__ */
   tuntap_close(&(eee.device));
+
+#ifdef __ANDROID_NDK__
+    traceEvent(TRACE_NORMAL, "Edge stoped.");
+    if (!slog) {
+        closeslog(slog);
+        slog = NULL;
+    }
+#endif /* #ifdef __ANDROID_NDK__ */
 
   edge_deinit( &eee );
 
   return(0);
 }
 
+#ifdef __ANDROID_NDK__
+int stop_edge_v1(void)
+{
+    keep_running = 0;
 
+    // quick stop
+    int fd = open_socket(0, 1, 0);
+    if (fd < 0) {
+        return 1;
+    }
+
+    struct sockaddr_in peer_addr;
+    peer_addr.sin_family = PF_INET;
+    peer_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    peer_addr.sin_port = htons(N2N_EDGE_MGMT_PORT);
+    sendto(fd, "", 1, 0, (struct sockaddr *)&peer_addr, sizeof(struct sockaddr_in));
+    close(fd);
+
+    pthread_mutex_lock(&g_status->mutex);
+    g_status->running_status = EDGE_STAT_DISCONNECT;
+    pthread_mutex_unlock(&g_status->mutex);
+    g_status->report_edge_status();
+
+    return 0;
+}
+#endif /* #ifdef __ANDROID_NDK__ */

@@ -202,6 +202,14 @@ typedef struct n2n_edge         n2n_edge_t;
 #define REGISTER_FREQUENCY              60 /* sec */
 #endif /* #if defined(DEBUG) */
 
+#ifdef __ANDROID_NDK__
+#include <slog/slog.h>
+extern int android_log_level(int lvl);
+extern slog_t* slog;
+#ifndef N2N_LOG_FILEPATH
+#define N2N_LOG_FILEPATH	"/storage/sdcard0/wang.switchy.hin2n/n2n_v1.log"
+#endif /* #ifndef N2N_LOG_FILEPATH */
+#endif /* #ifdef __ANDROID_NDK__ */
 #define TRACE_ERROR     0, __FILE__, __LINE__
 #define TRACE_WARNING   1, __FILE__, __LINE__
 #define TRACE_NORMAL    2, __FILE__, __LINE__
@@ -281,6 +289,7 @@ extern char* msg_type2str(u_short msg_type);
 extern void hexdump(char *buf, u_int len);
 
 void print_n2n_version();
+const char* random_device_mac(void);
 
 
 /* Operations on peer_info lists. */

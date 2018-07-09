@@ -292,6 +292,25 @@ void send_packet(n2n_sock_info_t * sinfo,
 int traceLevel = 2 /* NORMAL */;
 int useSyslog = 0, syslog_opened = 0;
 
+#ifdef __ANDROID_NDK__
+slog_t* slog = NULL;
+int android_log_level(int lvl)
+{
+  switch (lvl) {
+    case 0:         // ERROR
+      return ANDROID_LOG_ERROR;
+    case 1:         // WARNING
+      return ANDROID_LOG_WARN;
+    case 2:         // NORMAL
+      return ANDROID_LOG_INFO;
+    case 3:         // INFO
+      return ANDROID_LOG_VERBOSE;
+    default:        // NORMAL
+      return ANDROID_LOG_INFO;
+  }
+}
+#endif /* #ifdef __ANDROID_NDK__ */
+
 #define N2N_TRACE_DATESIZE 32
 void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...) {
   va_list va_ap;
@@ -334,11 +353,19 @@ void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...) {
       }
 
       snprintf(out_buf, sizeof(out_buf), "%s%s", extra_msg, buf);
-      syslog(LOG_INFO, out_buf);
+      syslog(LOG_INFO, "%s", out_buf);
     } else {
+#ifdef __ANDROID_NDK__
+        char * p = strrchr(file, '/');
+        file = (p ? p + 1 : file);
+#endif /* #ifdef __ANDROID_NDK__ */
       snprintf(out_buf, sizeof(out_buf), "%s [%11s:%4d] %s%s", theDate, file, line, extra_msg, buf);
+#ifdef __ANDROID_NDK__
+        slog = writeslog(slog, android_log_level(eventTraceLevel), "n2n_v1", out_buf);
+#else /* #ifdef __ANDROID_NDK__ */
       printf("%s\n", out_buf);
       fflush(stdout);
+#endif /* #ifdef __ANDROID_NDK__ */
     }
 #else
     /* this is the WIN32 code */
@@ -779,7 +806,24 @@ void print_n2n_version() {
          version, osName, buildDate);
 }
 
+const char* random_device_mac(void)
+{
+    const char key[] = "0123456789abcdef";
+    static char mac[18];
+    int i;
 
+    srand(gettid());
+    for (i = 0; i < sizeof(mac) - 1; ++i)
+    {
+        if ((i + 1) % 3 == 0) {
+            mac[i] = ':';
+            continue;
+        }
+        mac[i] = key[random() % sizeof(key)];
+    }
+    mac[sizeof(mac) - 1] = '\0';
+    return mac;
+}
 
 
 /** Find the peer entry in list with mac_addr equal to mac.
