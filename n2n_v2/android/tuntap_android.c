@@ -19,6 +19,7 @@
 
 #ifdef __ANDROID_NDK__
 #include <tun2tap/tun2tap.h>
+#include <linux/if.h>
 
 /* ********************************** */
 
@@ -79,10 +80,12 @@ int tuntap_read(struct tuntap_dev *tuntap, unsigned char *buf, int len) {
 }
 
 int tuntap_write(struct tuntap_dev *tuntap, unsigned char *buf, int len) {
+    int rlen;
     uip_buf = buf;
     uip_len = len;
     if (IPBUF->ethhdr.type == htons(UIP_ETHTYPE_IP)) {
-        return write(tuntap->fd, buf + UIP_LLH_LEN, len - UIP_LLH_LEN);
+        rlen = write(tuntap->fd, buf + UIP_LLH_LEN, len - UIP_LLH_LEN);
+        return rlen <= 0 ? rlen : rlen + UIP_LLH_LEN;
     } else if (IPBUF->ethhdr.type == htons(UIP_ETHTYPE_ARP)) {
         uip_arp_arpin();
         if (uip_len > 0) {
@@ -90,7 +93,7 @@ int tuntap_write(struct tuntap_dev *tuntap, unsigned char *buf, int len) {
             memcpy(uip_arp_buf, uip_buf, uip_arp_len);
             traceEvent(TRACE_DEBUG, "ARP reply packet prepare to send");
         }
-        return uip_len;
+        return len;
     }
 
     errno = EINVAL;
