@@ -303,7 +303,7 @@ const char* random_device_mac(void)
     static char mac[18];
     int i;
 
-    srand(getpid());
+    srand(gettid());
     for (i = 0; i < sizeof(mac) - 1; ++i)
     {
         if ((i + 1) % 3 == 0) {

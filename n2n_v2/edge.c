@@ -1094,12 +1094,12 @@ static void update_supernode_reg( n2n_edge_t * eee, time_t nowTime )
 
 #ifdef __ANDROID_NDK__
         int change = 0;
-        pthread_mutex_lock(&status.mutex);
-        change = status.running_status == EDGE_STAT_SUPERNODE_DISCONNECT ? 0 : 1;
-        status.running_status = EDGE_STAT_SUPERNODE_DISCONNECT;
-        pthread_mutex_unlock(&status.mutex);
+        pthread_mutex_lock(&g_status->mutex);
+        change = g_status->running_status == EDGE_STAT_SUPERNODE_DISCONNECT ? 0 : 1;
+        g_status->running_status = EDGE_STAT_SUPERNODE_DISCONNECT;
+        pthread_mutex_unlock(&g_status->mutex);
         if (change) {
-            report_edge_status();
+            g_status->report_edge_status();
         }
 #endif /* #ifdef __ANDROID_NDK__ */
 
@@ -2023,12 +2023,12 @@ static void readFromIPSocket( n2n_edge_t * eee )
 
 #ifdef __ANDROID_NDK__
                     int change = 0;
-                    pthread_mutex_lock(&status.mutex);
-                    change = status.running_status == EDGE_STAT_CONNECTED ? 0 : 1;
-                    status.running_status = EDGE_STAT_CONNECTED;
-                    pthread_mutex_unlock(&status.mutex);
+                    pthread_mutex_lock(&g_status->mutex);
+                    change = g_status->running_status == EDGE_STAT_CONNECTED ? 0 : 1;
+                    g_status->running_status = EDGE_STAT_CONNECTED;
+                    pthread_mutex_unlock(&g_status->mutex);
                     if (change) {
-                        report_edge_status();
+                        g_status->report_edge_status();
                     }
 #endif /* #ifdef __ANDROID_NDK__ */
 
@@ -2907,11 +2907,13 @@ static int run_loop(n2n_edge_t * eee )
     tuntap_close(&(eee->device));
     edge_deinit( eee );
 
+#ifdef __ANDROID_NDK__
     traceEvent(TRACE_NORMAL, "Edge stoped.");
     if (!slog) {
         closeslog(slog);
         slog = NULL;
     }
+#endif /* #ifdef __ANDROID_NDK__ */
 
     return(0);
 }
@@ -2935,7 +2937,7 @@ int main(int argc, char **argv)
         return 0;
 }
 #else /* #ifdef __ANDROID_NDK__ */
-int start_edge_v2s(const n2n_edge_cmd_t* cmd)
+int start_edge_v2s(n2n_edge_status_t* status)
 {
     int     local_port = 0 /* any port */;
     char    tuntap_dev_name[N2N_IFNAMSIZ] = "tun0";
@@ -2946,15 +2948,18 @@ int start_edge_v2s(const n2n_edge_cmd_t* cmd)
     char *  encrypt_key=NULL;
     int i;
 
-    keep_running = 0;
-    pthread_mutex_lock(&status.mutex);
-    status.running_status = EDGE_STAT_CONNECTING;
-    pthread_mutex_unlock(&status.mutex);
-    report_edge_status();
-    if (!cmd) {
+    if (!status) {
         traceEvent( TRACE_ERROR, "Empty cmd struct" );
         return 1;
     }
+    g_status = status;
+    n2n_edge_cmd_t* cmd = &status->cmd;
+
+    keep_running = 0;
+    pthread_mutex_lock(&g_status->mutex);
+    g_status->running_status = EDGE_STAT_CONNECTING;
+    pthread_mutex_unlock(&g_status->mutex);
+    g_status->report_edge_status();
 
     traceLevel = cmd->trace_vlevel;
     traceLevel = traceLevel < 0 ? 0 : traceLevel;   /* TRACE_ERROR */
@@ -3202,10 +3207,10 @@ int start_edge_v2s(const n2n_edge_cmd_t* cmd)
     }
 
     keep_running = 1;
-    pthread_mutex_lock(&status.mutex);
-    status.running_status = EDGE_STAT_CONNECTED;
-    pthread_mutex_unlock(&status.mutex);
-    report_edge_status();
+    pthread_mutex_lock(&g_status->mutex);
+    g_status->running_status = EDGE_STAT_CONNECTED;
+    pthread_mutex_unlock(&g_status->mutex);
+    g_status->report_edge_status();
     traceEvent(TRACE_NORMAL, "edge started");
 
     update_supernode_reg(&eee, time(NULL));
@@ -3223,10 +3228,11 @@ int stop_edge_v2s(void)
     peer_addr.sin_port = htons(N2N_EDGE_MGMT_PORT);
     sendto(eee.udp_mgmt_sock, "stop", 4, 0, (struct sockaddr *)&peer_addr, sizeof(struct sockaddr_in));
 
-    pthread_mutex_lock(&status.mutex);
-    status.running_status = EDGE_STAT_DISCONNECT;
-    pthread_mutex_unlock(&status.mutex);
-    report_edge_status();
+    pthread_mutex_lock(&g_status->mutex);
+    g_status->running_status = EDGE_STAT_DISCONNECT;
+    pthread_mutex_unlock(&g_status->mutex);
+    g_status->report_edge_status();
+
     return 0;
 }
 #endif /* #ifdef __ANDROID_NDK__ */

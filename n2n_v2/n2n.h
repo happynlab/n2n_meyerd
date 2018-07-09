@@ -240,7 +240,6 @@ extern slog_t* slog;
 #define TRACE_INFO      3, __FILE__, __LINE__
 #define TRACE_DEBUG     4, __FILE__, __LINE__
 
-
 /* ************************************** */
 
 #define SUPERNODE_IP    "127.0.0.1"
