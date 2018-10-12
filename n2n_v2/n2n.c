@@ -288,7 +288,7 @@ void print_n2n_version(int trace) {
                     "Copyright 2007-09 - http://www.ntop.org\n"
                     "Modify version %s\n"
                     "Modify by %s\n"
-                    "Modify Copyright 2018 - %d - https://github.com/switch-iot/n2n_vLTS\n\n";
+                    "Modify Copyright 2018 - %d - https://github.com/switch-iot/hin2n\n\n";
     time_t t = time(NULL);
     if (trace == 1) {
         traceEvent(TRACE_NORMAL, bufline, n2n_sw_version, n2n_sw_osName, n2n_sw_buildDate, n2n_mod_version, n2n_mod_author, localtime(&t)->tm_year + 1900);
