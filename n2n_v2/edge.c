@@ -2968,7 +2968,7 @@ int start_edge_v2s(n2n_edge_status_t* status)
         closeslog(slog);
         slog = NULL;
     }
-    slog = initslog(android_log_level(traceLevel), N2N_LOG_FILEPATH);
+    slog = initslog(android_log_level(traceLevel), cmd->logpath);
 
     if (-1 == edge_init(&eee) )
     {
