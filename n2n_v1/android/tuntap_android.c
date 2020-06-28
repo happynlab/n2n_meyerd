@@ -20,7 +20,10 @@
 #ifdef __ANDROID_NDK__
 
 #include <tun2tap/tun2tap.h>
+#include <edge_jni/edge_jni.h>
 #include <linux/if.h>
+
+n2n_edge_status_t* g_status;
 
 /* ********************************** */
 
