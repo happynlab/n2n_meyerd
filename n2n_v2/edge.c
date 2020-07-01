@@ -3172,7 +3172,7 @@ int start_edge_v2s(n2n_edge_status_t* status)
     /* set host addr, netmask, mac addr for UIP and init arp*/
     {
         int match, i;
-        u8_t ip[4];
+        int ip[4];
         uip_ipaddr_t ipaddr;
         struct uip_eth_addr eaddr;
 

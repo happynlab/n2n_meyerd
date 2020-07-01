@@ -120,7 +120,7 @@ int android_log_level(int lvl)
 #endif /* #ifdef __ANDROID_NDK__ */
 
 #define N2N_TRACE_DATESIZE 32
-void traceEvent(int eventTraceLevel, char* file, int line, char * format, ...) {
+void traceEvent(int eventTraceLevel, char* file, int line, const char * format, ...) {
   va_list va_ap;
 
   if(eventTraceLevel <= traceLevel) {
@@ -509,7 +509,7 @@ extern char * sock_to_cstr( n2n_sock_str_t out,
     else
     {
         const uint8_t * a = sock->addr.v4;
-        snprintf( out, N2N_SOCKBUF_SIZE, "%hu.%hu.%hu.%hu:%hu", (a[0] & 0xff),
+        snprintf( out, N2N_SOCKBUF_SIZE, "%d.%d.%d.%d:%d", (a[0] & 0xff),
                 (a[1] & 0xff), (a[2] & 0xff), (a[3] & 0xff), sock->port );
         return out;
     }
