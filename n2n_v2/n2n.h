@@ -231,7 +231,7 @@ typedef struct n2n_edge         n2n_edge_t;
 extern int android_log_level(int lvl);
 extern slog_t* slog;
 #ifndef N2N_LOG_FILEPATH
-#define N2N_LOG_FILEPATH	"/storage/sdcard0/wang.switchy.hin2n/n2n_v2s.log"
+#define N2N_LOG_FILEPATH	"/storage/sdcard0/net.happyn.happynet/n2n_v2s.log"
 #endif /* #ifndef N2N_LOG_FILEPATH */
 #endif /* #ifdef __ANDROID_NDK__ */
 #define TRACE_ERROR     0, __FILE__, __LINE__
